@@ -1,0 +1,136 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="BBDownHelper.MainWindow"
+        Title="BBDown 下载助手" Width="880" Height="780"
+        MinWidth="760" MinHeight="640">
+  <ScrollViewer>
+    <StackPanel Margin="18" Spacing="10">
+
+      <TextBlock Text="把 B 站链接粘贴到下面的框里，会自动识别类型；选好需求后点「开始下载」即可。"
+                 TextWrapping="Wrap" FontSize="14"/>
+
+      <!-- 输入 -->
+      <TextBox x:Name="InputBox" AcceptsReturn="True" Height="64" TextWrapping="Wrap"
+               Watermark="粘贴链接 / BV号 / av号 / 分享文字，粘贴后自动识别"/>
+
+      <!-- 识别结果卡片 -->
+      <Border x:Name="ResultCard" IsVisible="False" Padding="12" CornerRadius="8"
+              Background="#110000AA" BorderBrush="#330000AA" BorderThickness="1">
+        <StackPanel Spacing="4">
+          <TextBlock x:Name="TypeText" FontWeight="Bold" FontSize="15"/>
+          <TextBlock x:Name="TitleText" TextWrapping="Wrap" IsVisible="False"/>
+          <TextBlock x:Name="LinkText" TextWrapping="Wrap" FontSize="12" Opacity="0.8"/>
+          <TextBlock x:Name="MsgText" TextWrapping="Wrap" Foreground="#CC8800" IsVisible="False"/>
+        </StackPanel>
+      </Border>
+
+      <!-- 多候选选择 -->
+      <Border x:Name="CandidateCard" IsVisible="False" Padding="12" CornerRadius="8"
+              Background="#22884400" BorderBrush="#CC8800" BorderThickness="1">
+        <StackPanel Spacing="6">
+          <TextBlock Text="这个数字对应到多个内容，请选择一个（不会替你默认选）：" FontWeight="Bold"/>
+          <StackPanel x:Name="CandidateList" Spacing="4"/>
+          <Button x:Name="CandidateOkBtn" Content="就用选中的这个" HorizontalAlignment="Left"/>
+        </StackPanel>
+      </Border>
+
+      <!-- 只解析（下载设置区最顶部，对齐生成器 v5） -->
+      <Border Padding="12" CornerRadius="8" BorderBrush="#330000AA" BorderThickness="1">
+        <StackPanel Spacing="4">
+          <CheckBox x:Name="InfoBox" Content="只解析，不下载（先看看链接里有什么）" FontWeight="Bold"/>
+          <TextBlock x:Name="InfoHintText" IsVisible="False" Foreground="#CC8800" FontSize="12"
+                     TextWrapping="Wrap"
+                     Text="已开启只解析：下面的下载设置全部不生效（将执行 BBDown -info，只列出信息不下载）。取消勾选后立即恢复。"/>
+        </StackPanel>
+      </Border>
+
+      <!-- 画质音质 -->
+      <Border Padding="12" CornerRadius="8" BorderBrush="#330000AA" BorderThickness="1">
+        <StackPanel Spacing="6">
+          <TextBlock Text="画质与编码" FontWeight="Bold"/>
+          <CheckBox x:Name="MtBox" Content="多线程加速（推荐保持勾选）" IsChecked="True"/>
+          <StackPanel Spacing="2">
+            <RadioButton x:Name="QAuto" GroupName="q" Content="自动最高画质（推荐）" IsChecked="True"/>
+            <RadioButton x:Name="QIa" GroupName="q" Content="下载前让我手动选画质（运行时列清单）"/>
+            <RadioButton x:Name="Q1080" GroupName="q" Content="1080P 优先"/>
+            <RadioButton x:Name="Q4k" GroupName="q" Content="4K 优先（需先扫码登录大会员账号）"/>
+            <RadioButton x:Name="Q480" GroupName="q" Content="省流量优先（480P/360P）"/>
+          </StackPanel>
+          <StackPanel Spacing="2">
+            <RadioButton x:Name="EAuto" GroupName="e" Content="编码自动（推荐）" IsChecked="True"/>
+            <RadioButton x:Name="EHevc" GroupName="e" Content="HEVC 优先（体积小）"/>
+            <RadioButton x:Name="EAvc" GroupName="e" Content="AVC 兼容优先（老设备选这个）"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <!-- 内容选择 -->
+      <Border Padding="12" CornerRadius="8" BorderBrush="#330000AA" BorderThickness="1">
+        <StackPanel Spacing="6">
+          <TextBlock Text="内容选择" FontWeight="Bold"/>
+          <CheckBox x:Name="AudioOnlyBox" Content="只要音频（不要视频画面）"/>
+          <StackPanel Spacing="2">
+            <RadioButton x:Name="DNone" GroupName="d" Content="不带弹幕" IsChecked="True"/>
+            <RadioButton x:Name="DDd" GroupName="d" Content="视频带弹幕"/>
+            <RadioButton x:Name="DOnly" GroupName="d" Content="只要弹幕文件"/>
+          </StackPanel>
+          <CheckBox x:Name="CoverOnlyBox" Content="只要封面"/>
+          <CheckBox x:Name="SubOnlyBox" Content="只要字幕"/>
+        </StackPanel>
+      </Border>
+
+      <!-- 选集 -->
+      <Border Padding="12" CornerRadius="8" BorderBrush="#330000AA" BorderThickness="1">
+        <StackPanel Spacing="6">
+          <TextBlock Text="选集（合集/系列/番剧/多P视频时可填）" FontWeight="Bold"/>
+          <TextBox x:Name="PageBox" Watermark="例如：8 或 1,2 或 3-5 或 ALL 或 LAST；留空=全部"/>
+          <TextBlock x:Name="PageErrorText" IsVisible="False" Foreground="#E05555" FontSize="12"
+                     TextWrapping="Wrap"
+                     Text="选集写法不对，只能填：8、1,2、3-5、ALL 或 LAST（留空=全部）。请改正后才能开始下载。"/>
+        </StackPanel>
+      </Border>
+
+      <!-- 列表下载辅助 -->
+      <Border x:Name="ListGroup" IsVisible="False" Padding="12" CornerRadius="8"
+              BorderBrush="#330000AA" BorderThickness="1">
+        <StackPanel Spacing="6">
+          <TextBlock Text="列表下载辅助（合集/系列/收藏夹/UP主页）" FontWeight="Bold"/>
+          <CheckBox x:Name="DelayBox" Content="每个视频之间歇 5 秒（防限流，建议勾）" IsChecked="True"/>
+          <CheckBox x:Name="SaveArchivesBox" Content="记住已下载，中断后再下自动跳过（建议勾）" IsChecked="True"/>
+        </StackPanel>
+      </Border>
+
+      <!-- 下载位置 -->
+      <Border Padding="12" CornerRadius="8" BorderBrush="#330000AA" BorderThickness="1">
+        <StackPanel Spacing="6">
+          <TextBlock Text="下载到哪个文件夹" FontWeight="Bold"/>
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock x:Name="DirText" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            <Button x:Name="BrowseBtn" Grid.Column="1" Content="浏览…"/>
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- 操作区 -->
+      <StackPanel Orientation="Horizontal" Spacing="10">
+        <Button x:Name="StartBtn" Content="开始下载" FontWeight="Bold" Padding="20,8"/>
+        <Button x:Name="CancelBtn" Content="取消下载" IsEnabled="False" Padding="20,8"/>
+        <Button x:Name="LoginBtn" Content="扫码登录" Padding="20,8"/>
+        <TextBlock x:Name="LoginStatus" VerticalAlignment="Center" Text="未登录"/>
+      </StackPanel>
+
+      <ProgressBar x:Name="DownloadProgress" Minimum="0" Maximum="100" Value="0" Height="14"/>
+      <TextBlock x:Name="StatusText" Text="就绪" Opacity="0.8"/>
+
+      <!-- 日志 -->
+      <TextBlock Text="运行日志" FontWeight="Bold"/>
+      <Border BorderBrush="#330000AA" BorderThickness="1" CornerRadius="8" Padding="4">
+        <ScrollViewer x:Name="LogScroll" Height="200">
+          <TextBox x:Name="LogBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                   BorderThickness="0" Background="Transparent" FontSize="12"/>
+        </ScrollViewer>
+      </Border>
+
+    </StackPanel>
+  </ScrollViewer>
+</Window>
