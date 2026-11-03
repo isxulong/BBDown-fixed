@@ -24,4 +24,9 @@
     <ProjectReference Include="..\BBDown.Core\BBDown.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!--换票 v3: 向 mock 测试工程暴露 internal 成员 (ExchangeTicketAsync 等)-->
+    <InternalsVisibleTo Include="BBDown.LoginTests" />
+  </ItemGroup>
+
 </Project>
