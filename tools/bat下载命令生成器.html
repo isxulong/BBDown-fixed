@@ -1,0 +1,2721 @@
+<!DOCTYPE html>
+<html data-src-ver="dd06513c" lang="zh-CN">
+<head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' miaoda-compiled.tos-cn-beijing.volces.com lf-miaoda-compiled-static.feishucdn.com sf3-scmcdn-cn.feishucdn.com lf3-short.ibytedapm.com; style-src * 'unsafe-inline'; font-src 'self' data: *.feishucdn.com miaoda.feishu.cn *.volces.com; img-src 'self' data: blob: *.bytedance.net miaoda-compiled.tos-cn-beijing.volces.com *.feishucdn.com; media-src 'self' *.bytedance.net *.volces.com miaoda-compiled.tos-cn-beijing.volces.com *.feishucdn.com; connect-src *; frame-src *; object-src *; worker-src 'none'; child-src 'none'"><base href="/app/app_17hb18twhh6/"><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="creative-medium" content="interactive-prototype">
+<meta name="description" content="粘贴 B 站链接、勾选下载需求，自动生成可运行的 BBDown 命令与 .bat 文件。纯静态页面，不上传任何数据。">
+<title>BBDown 命令生成器</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23CE4257'/%3E%3Cpath d='M9 10h6.5a5 5 0 0 1 0 10H9V10zm4 3.4v4.2h2.3a2.1 2.1 0 0 0 0-4.2H13z' fill='%23F7F3EA'/%3E%3C/svg%3E">
+<style>
+/* ---------- tokens ---------- */
+:root {
+  --paper: #f4f0e7;
+  --paper-2: #fbf8f2;
+  --paper-3: #efe9dd;
+  --ink: #171a1c;
+  --ink-2: #4c5359;
+  --ink-3: #7b8289;
+  --line: #ded6c6;
+  --line-soft: #e8e1d4;
+  --accent: #ce4257;
+  --accent-deep: #b23448;
+  --accent-soft: #fae8ea;
+  --teal: #2b6a5f;
+  --teal-soft: #e6efe9;
+  --amber: #8f5d1e;
+  --amber-soft: #f8ecd8;
+  --bad: #a33a32;
+  --bad-soft: #f8e5e1;
+  --dark: #15181a;
+  --dark-2: #0e1113;
+  --dark-line: #2b3033;
+  --mono: "Cascadia Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", ui-monospace, monospace;
+  --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", system-ui, -apple-system, sans-serif;
+  --display: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  background-image:
+    radial-gradient(1200px 520px at 12% -12%, rgba(255, 253, 246, 0.95), rgba(255, 253, 246, 0) 70%),
+    radial-gradient(900px 460px at 92% 0%, rgba(206, 66, 87, 0.045), rgba(206, 66, 87, 0) 70%);
+  background-repeat: no-repeat;
+}
+
+::selection { background: rgba(206, 66, 87, 0.18); }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  background: rgba(23, 26, 28, 0.055);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.page {
+  max-width: 1340px;
+  margin: 0 auto;
+  padding: 0 40px 72px;
+}
+
+/* ---------- masthead ---------- */
+.masthead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 32px;
+  align-items: end;
+  padding: 52px 0 26px;
+}
+
+.kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.kicker-rule {
+  width: 22px;
+  height: 1px;
+  background: var(--accent);
+  display: inline-block;
+}
+
+h1 {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: clamp(36px, 4.6vw, 58px);
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+  margin: 14px 0 0;
+  text-wrap: balance;
+}
+
+.lede {
+  margin: 16px 0 0;
+  max-width: 48ch;
+  color: var(--ink-2);
+  font-size: 15px;
+  line-height: 1.8;
+  text-wrap: pretty;
+}
+
+.masthead-side {
+  text-align: right;
+  padding-bottom: 6px;
+}
+
+.meta-line {
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.meta-dim { color: var(--ink-3); }
+
+.pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--teal);
+  box-shadow: 0 0 0 3px rgba(43, 106, 95, 0.14);
+}
+
+/* ---------- ruler ---------- */
+.ruler {
+  height: 9px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background-image: repeating-linear-gradient(90deg, rgba(123, 130, 137, 0.5) 0 1px, transparent 1px 16px);
+  background-size: 100% 5px;
+  background-position: 0 0;
+  background-repeat: repeat-x;
+  opacity: 0.75;
+}
+
+/* ---------- notice ---------- */
+.notice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin: 26px 0 8px;
+  padding: 14px 18px;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  line-height: 1.75;
+  text-wrap: pretty;
+}
+
+.notice p { margin: 0; }
+.notice strong { color: var(--ink); font-weight: 700; }
+
+.notice-icon {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  margin-top: 2px;
+  color: var(--accent);
+}
+
+/* ---------- workbench ---------- */
+.workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 436px;
+  gap: 56px;
+  align-items: start;
+  margin-top: 18px;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 20px;
+  padding: 34px 0 30px;
+  border-top: 1px solid var(--line);
+}
+
+.step:first-child { border-top: 0; }
+
+.step-no {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  letter-spacing: 0.06em;
+  padding-top: 5px;
+}
+
+.step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.step-head h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+.step-hint {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+/* ---------- paste ---------- */
+.paste {
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.paste:focus-within {
+  border-color: rgba(206, 66, 87, 0.55);
+  box-shadow: 0 0 0 4px rgba(206, 66, 87, 0.09);
+}
+
+#source {
+  display: block;
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 0;
+  background: transparent;
+  padding: 16px 18px 10px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--ink);
+  outline: none;
+  border-radius: 12px 12px 0 0;
+}
+
+#source::placeholder { color: #a9a79d; }
+
+.paste-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 8px 14px 12px;
+}
+
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chips-label {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  margin-right: 2px;
+}
+
+.chip {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink-2);
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.chip:hover {
+  border-color: rgba(206, 66, 87, 0.45);
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+}
+
+.chip-mono { font-family: var(--mono); letter-spacing: 0.03em; }
+
+.chip:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  background: transparent;
+  border-style: dashed;
+}
+
+.link-btn {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 4px 2px;
+  color: var(--ink-3);
+  font-family: var(--sans);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+
+.link-btn:hover { color: var(--accent-deep); text-decoration-color: currentColor; }
+
+/* ---------- recognition ---------- */
+.recog {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper-2);
+  padding: 18px 20px 20px;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.recog[data-tone="idle"] {
+  border-style: dashed;
+  background: transparent;
+  color: var(--ink-3);
+}
+
+.recog[data-tone="ok"] { background: var(--teal-soft); border-color: #c3d8ce; }
+.recog[data-tone="warn"] { background: var(--amber-soft); border-color: #e6d2ae; }
+.recog[data-tone="bad"] { background: var(--bad-soft); border-color: #e6c6be; }
+
+.recog-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+
+.recog[data-tone="ok"] .recog-top { color: var(--teal); }
+.recog[data-tone="warn"] .recog-top { color: var(--amber); }
+.recog[data-tone="bad"] .recog-top { color: var(--bad); }
+
+.recog-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.recog-type {
+  margin: 8px 0 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  color: var(--ink);
+  font-family: var(--sans);
+}
+
+.recog-idle { margin: 10px 0 0; font-size: 13.5px; line-height: 1.75; }
+
+.recog-grid {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 9px 16px;
+  margin: 14px 0 0;
+  align-items: baseline;
+}
+
+.recog-grid dt {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  padding-top: 2px;
+}
+
+.recog-grid dd {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.recog-grid dd code {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(23, 26, 28, 0.08);
+  padding: 2px 7px;
+  font-size: 12.5px;
+  display: inline-block;
+  max-width: 100%;
+  word-break: break-all;
+}
+
+.recog-notes {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid rgba(23, 26, 28, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recog-note {
+  display: flex;
+  gap: 9px;
+  font-size: 12.8px;
+  line-height: 1.7;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.recog-note .marker {
+  font-family: var(--mono);
+  font-size: 11px;
+  flex: none;
+  padding-top: 3px;
+  color: var(--ink-3);
+}
+
+.recog-note[data-level="warn"] { color: #6f4a15; }
+.recog-note[data-level="warn"] .marker { color: var(--amber); }
+
+.recog-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.recog-examples code {
+  font-size: 11px;
+  padding: 3px 6px;
+  overflow-wrap: anywhere;
+}
+
+.recog-examples code { background: rgba(255, 255, 255, 0.6); }
+
+.confirm-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(23, 26, 28, 0.12);
+  border-radius: 9px;
+  font-size: 13px;
+  line-height: 1.6;
+  cursor: pointer;
+  color: var(--ink);
+}
+
+.confirm-row input {
+  margin: 3px 0 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+/* ---------- 只解析模式（置顶开关） ---------- */
+.mode-card {
+  margin-top: 16px;
+  border: 1px solid rgba(23, 26, 28, 0.12);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.72);
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.mode-card .switch { padding: 12px 13px; border-radius: 10px; }
+
+.mode-card.is-on {
+  border-color: rgba(206, 66, 87, 0.34);
+  background: var(--accent-soft);
+}
+
+/* 选中态由卡片承担，内部开关不再叠一层底色和边框 */
+.mode-card .switch.is-active {
+  background: transparent;
+  border-color: transparent;
+}
+
+.mode-note {
+  margin: 0;
+  padding: 0 13px 12px 42px;
+  font-size: 12.3px;
+  line-height: 1.6;
+  color: var(--accent-deep);
+  text-wrap: pretty;
+}
+
+.mode-card + .opt-group { margin-top: 20px; }
+
+.step-body.is-info .opt-head { opacity: 0.45; }
+
+/* ---------- options ---------- */
+.opt-group { margin-top: 26px; }
+.opt-group:first-of-type { margin-top: 4px; }
+
+.opt-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.opt-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.opt-head .hint {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.opt-list { display: flex; flex-direction: column; }
+
+.opt,
+.switch {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.opt:hover,
+.switch:hover { background: rgba(23, 26, 28, 0.035); }
+
+.opt input,
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+}
+
+.opt:has(input:focus-visible),
+.switch:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.mark {
+  flex: none;
+  margin-top: 2px;
+  width: 17px;
+  height: 17px;
+  position: relative;
+  border: 1.5px solid #b7b0a1;
+  background: #fff;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.mark-radio { border-radius: 50%; }
+.mark-box { border-radius: 4.5px; }
+
+.mark-radio::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.opt input:checked ~ .mark,
+.switch input:checked ~ .mark {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.opt input:checked ~ .mark-radio::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.switch input:checked ~ .mark-box::after {
+  content: "";
+  position: absolute;
+  left: 4.5px;
+  top: 1px;
+  width: 4.5px;
+  height: 8.5px;
+  border: solid #fff;
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(42deg);
+}
+
+.opt.is-active,
+.switch.is-active {
+  background: var(--accent-soft);
+  border-color: rgba(206, 66, 87, 0.28);
+}
+
+.opt.is-off,
+.switch.is-off {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.opt.is-off:hover,
+.switch.is-off:hover { background: transparent; }
+
+.opt-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.opt-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  line-height: 1.5;
+}
+
+.opt-desc {
+  font-size: 12.3px;
+  line-height: 1.6;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
+.opt-param {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  padding-top: 3px;
+  flex: none;
+}
+
+.tag {
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 3px;
+  background: rgba(43, 106, 95, 0.12);
+  color: var(--teal);
+}
+
+.tag-warn { background: rgba(143, 93, 30, 0.14); color: var(--amber); }
+
+.switch-row { margin-top: 22px; }
+.switch-row-tight { margin-top: 8px; }
+
+/* ---------- fields ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 4px 2px 0;
+}
+
+.field-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.input {
+  width: 100%;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.input::placeholder { color: #b0ada3; }
+
+.input:focus {
+  border-color: rgba(206, 66, 87, 0.55);
+  box-shadow: 0 0 0 3px rgba(206, 66, 87, 0.09);
+}
+
+.input-mono { font-family: var(--mono); font-size: 13px; }
+.input-num { width: 84px; height: 38px; text-align: center; }
+
+.input:disabled {
+  background: rgba(23, 26, 28, 0.04);
+  color: var(--ink-3);
+  cursor: not-allowed;
+}
+
+.field-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
+.field-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--bad);
+}
+
+.field-inline { gap: 8px; }
+
+.inline-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unit { font-size: 13px; color: var(--ink-3); }
+
+/* ---------- output ---------- */
+.side-col { position: sticky; top: 22px; }
+
+.output {
+  background: var(--dark);
+  color: #e9e4da;
+  border-radius: 16px;
+  padding: 22px 22px 20px;
+  box-shadow: 0 28px 60px -34px rgba(18, 21, 23, 0.7), 0 2px 0 rgba(255, 255, 255, 0.04) inset;
+  font-size: 13px;
+}
+
+.output-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--dark-line);
+}
+
+.output-step {
+  font-size: 14px;
+  font-weight: 700;
+  color: #f1ece1;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.output-step .mono {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: #8d9498;
+  letter-spacing: 0.06em;
+}
+
+.output-file {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #9aa1a4;
+  overflow-wrap: anywhere;
+  text-align: right;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cmd-wrap { margin-top: 16px; }
+
+.cmd {
+  background: var(--dark-2);
+  border: 1px solid #272c2f;
+  border-radius: 10px;
+  padding: 14px 15px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.85;
+  color: #d6d1c7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-height: 76px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.cmd::-webkit-scrollbar { width: 8px; }
+.cmd::-webkit-scrollbar-thumb {
+  background: #3a4144;
+  border-radius: 4px;
+}
+.cmd::-webkit-scrollbar-track { background: transparent; }
+
+.cmd-empty {
+  color: #767d81;
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.8;
+  display: block;
+  padding: 8px 0;
+}
+
+.cmd .bin { color: #f3a6b2; font-weight: 600; }
+.cmd .flag { color: #8fc0b5; }
+.cmd .meta { color: #8a9296; }
+.cmd .comment { color: #6f9c8d; }
+.cmd .arg { color: #d9cdb4; }
+.cmd .target { color: #f5e3b8; }
+.cmd .sep { color: #6f767a; }
+
+.lock-note {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  margin-top: 12px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  background: rgba(206, 66, 87, 0.14);
+  border: 1px solid rgba(206, 66, 87, 0.32);
+  color: #f0c3ca;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.lock-note svg { width: 15px; height: 15px; flex: none; margin-top: 3px; }
+
+.actions {
+  display: flex;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, opacity 0.16s ease;
+}
+
+.btn svg { width: 16px; height: 16px; flex: none; }
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  flex: 1.15;
+}
+
+.btn-primary:hover { background: #dc5769; }
+.btn-primary:active { background: var(--accent-deep); }
+
+.btn-ghost {
+  background: transparent;
+  color: #e5e0d5;
+  border-color: #3b4245;
+  flex: 1;
+}
+
+.btn-ghost:hover {
+  border-color: #5c6568;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.btn:focus-visible,
+.chip:focus-visible,
+.link-btn:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.output .btn:focus-visible { outline-color: #f3a6b2; }
+
+.output-section {
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px solid var(--dark-line);
+}
+
+.output-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  color: #868d90;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.flags { display: flex; flex-direction: column; gap: 7px; }
+
+.flag-row {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.flag-row code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #a8d3c8;
+  background: rgba(143, 192, 181, 0.1);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 158px;
+}
+
+.flag-row span {
+  color: #a9aeaf;
+  line-height: 1.55;
+}
+
+.flags-empty {
+  margin: 0;
+  font-size: 12px;
+  color: #868d90;
+  line-height: 1.7;
+}
+
+.output-notes { display: flex; flex-direction: column; gap: 8px; }
+
+.output-notes p {
+  margin: 0;
+  font-size: 11.8px;
+  line-height: 1.7;
+  color: #969c9e;
+  padding-left: 13px;
+  position: relative;
+  text-wrap: pretty;
+}
+
+.output-notes p::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #5c6467;
+}
+
+.output-notes code {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cfc9bd;
+  font-family: var(--mono);
+  font-size: 10.8px;
+  padding: 1px 4px;
+}
+
+.side-foot {
+  margin: 14px 2px 0;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+/* ---------- manual ---------- */
+.manual {
+  margin: 10px 0 0;
+  border-top: 1px solid var(--line);
+  padding-top: 20px;
+}
+
+.manual summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 6px 0;
+}
+
+.manual summary::-webkit-details-marker { display: none; }
+
+.manual-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.manual-title::before {
+  content: "+";
+  font-family: var(--mono);
+  font-weight: 400;
+  color: var(--accent);
+  margin-right: 8px;
+  display: inline-block;
+  width: 10px;
+}
+
+.manual[open] .manual-title::before { content: "−"; }
+
+.manual-sub { font-size: 12px; color: var(--ink-3); }
+
+.manual-body { padding: 14px 0 4px; }
+
+.manual-list {
+  margin: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.manual-list > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 14px;
+  align-items: baseline;
+}
+
+.manual-list dt {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.manual-list dd {
+  margin: 0;
+  font-size: 12.8px;
+  line-height: 1.8;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+.manual-note {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+  font-size: 12.3px;
+  line-height: 1.8;
+  color: var(--ink-3);
+  text-wrap: pretty;
+}
+
+/* ---------- footer ---------- */
+.footer {
+  margin-top: 40px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.footer p {
+  margin: 0;
+  font-size: 11.8px;
+  line-height: 1.8;
+  color: var(--ink-3);
+  max-width: 84ch;
+}
+
+.noscript {
+  max-width: 1340px;
+  margin: 0 auto;
+  padding: 20px 40px;
+  color: var(--bad);
+  font-size: 14px;
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 1120px) {
+  .workbench {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .side-col {
+    position: static;
+    margin-top: 8px;
+  }
+
+  .output { padding: 22px; }
+}
+
+@media (max-width: 900px) {
+  .masthead {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+    padding-top: 40px;
+  }
+
+  .masthead-side {
+    text-align: left;
+  }
+
+  .meta-line { justify-content: flex-start; }
+}
+
+@media (max-width: 680px) {
+  .page { padding: 0 18px 48px; }
+
+  h1 { font-size: clamp(30px, 9vw, 38px); }
+
+  .step {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    padding: 26px 0 24px;
+  }
+
+  .step-no { padding-top: 0; }
+
+  .notice { padding: 12px 14px; font-size: 12.8px; }
+
+  .paste-foot { align-items: flex-start; }
+
+  .recog { padding: 15px 16px 17px; }
+  .recog-type { font-size: 19px; }
+
+  .recog-grid { grid-template-columns: 66px minmax(0, 1fr); gap: 8px 12px; }
+
+  .opt { padding: 9px 8px; gap: 10px; }
+
+  .opt-param {
+    display: none;
+  }
+
+  .actions { flex-wrap: wrap; }
+  .btn { height: 44px; }
+  .btn-primary, .btn-ghost { flex: 1 1 100%; }
+
+  .manual-list > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+
+  .output { border-radius: 14px; padding: 18px 16px; }
+}
+
+</style>
+
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div class="masthead-main">
+      <div class="kicker"><span class="kicker-rule" aria-hidden="true"></span>BBDown · 命令行拼装台</div>
+      <h1>BBDown 命令生成器</h1>
+      <p class="lede">粘贴 B 站的分享文字、链接或 BV 号，勾选要下载的内容，页面会替你把 BBDown 命令拼好——复制走，或者存成 .bat 放进程序文件夹。</p>
+    </div>
+    <div class="masthead-side">
+      <p class="meta-line"><span class="pulse" aria-hidden="true"></span>纯静态页面</p>
+      <p class="meta-line">不上传 · 不联网 · 可离线</p>
+      <p class="meta-line meta-dim">适合 BBDown 1.6.x</p>
+    </div>
+  </header>
+
+  <div class="ruler" aria-hidden="true"></div>
+
+  <div class="notice" role="note">
+    <svg class="notice-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.25" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M12 7.6v.2M12 11v5.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+    <p><strong>这个页面不会替你下载视频。</strong>浏览器没有权限调用你电脑上的 BBDown.exe，也拿不到你的登录状态。它只负责把命令拼对——命令要在你自己的电脑上运行，才真的开始下载。</p>
+  </div>
+
+  <main class="workbench">
+    <div class="main-col">
+
+      <section class="step" id="step-input">
+        <div class="step-no">01</div>
+        <div class="step-body">
+          <div class="step-head">
+            <h2>粘贴链接</h2>
+            <span class="step-hint">边粘边识别，不用点任何按钮</span>
+          </div>
+          <div class="paste">
+            <textarea id="source" rows="3" spellcheck="false" autocomplete="off" aria-label="粘贴 B 站链接、分享文字、BV 号或 av 号" placeholder="把 B 站分享出来的整段文字直接粘进来就行，比如：&#10;【某视频标题】 https://www.bilibili.com/video/BV1xx411c7mD?p=2"></textarea>
+            <div class="paste-foot">
+              <div class="chips chips-example">
+                <span class="chips-label">试试示例</span>
+                <button type="button" class="chip" data-example="https://www.bilibili.com/video/BV1xx411c7mD?p=2">单视频</button>
+                <button type="button" class="chip" data-example="https://space.bilibili.com/123456/lists/789012?type=season">合集</button>
+                <button type="button" class="chip" data-example="https://www.bilibili.com/bangumi/play/ep123456">番剧</button>
+                <button type="button" class="chip" data-example="4405454">纯数字</button>
+              </div>
+              <button type="button" class="link-btn" id="clearBtn">清空</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="step" id="step-recog">
+        <div class="step-no">02</div>
+        <div class="step-body">
+          <div class="step-head">
+            <h2>识别结果</h2>
+            <span class="step-hint">自动判断是单视频、合集还是番剧</span>
+          </div>
+          <div class="recog" id="recog" data-tone="idle" role="status" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <section class="step" id="step-options">
+        <div class="step-no">03</div>
+        <div class="step-body">
+          <div class="step-head">
+            <h2>下载设置</h2>
+            <span class="step-hint" id="optionsHint">不勾也能用，默认就是最高画质</span>
+          </div>
+
+          <div class="mode-card" id="infoCard">
+            <label class="switch">
+              <input type="checkbox" id="info">
+              <span class="mark mark-box" aria-hidden="true"></span>
+              <span class="opt-body">
+                <span class="opt-label">只解析，不下载</span>
+                <span class="opt-desc">先只让 BBDown 读出链接信息，确认没问题再回来改成下载。UP 主主页只会导出地址清单。</span>
+              </span>
+              <span class="opt-param">-info</span>
+            </label>
+            <p class="mode-note" id="infoNote" hidden>已开启只解析：下面的下载设置全部不生效，生成的 .bat 只导出信息，不下载任何视频。</p>
+          </div>
+
+          <div class="opt-group" data-group="quality">
+            <div class="opt-head">
+              <h3>清晰度</h3>
+              <span class="hint">单选</span>
+            </div>
+            <div class="opt-list" role="radiogroup" aria-label="清晰度">
+              <label class="opt">
+                <input type="radio" name="quality" value="auto" checked>
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">自动最高<span class="tag">推荐</span></span>
+                  <span class="opt-desc">BBDown 自己挑当前账号能拿到的最高画质</span>
+                </span>
+                <span class="opt-param">默认</span>
+              </label>
+              <label class="opt">
+                <input type="radio" name="quality" value="manual">
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">运行时手动挑</span>
+                  <span class="opt-desc">下载前列出画质清单，输入序号选择，最不容易出错</span>
+                </span>
+                <span class="opt-param">-ia</span>
+              </label>
+              <label class="opt">
+                <input type="radio" name="quality" value="1080">
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">1080P 优先</span>
+                  <span class="opt-desc">1080P 高码率 → 1080P 高清 → 720P 高清，能拿到哪个用哪个</span>
+                </span>
+                <span class="opt-param">-q</span>
+              </label>
+              <label class="opt">
+                <input type="radio" name="quality" value="4k">
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">4K 优先<span class="tag tag-warn">需大会员</span></span>
+                  <span class="opt-desc">4K 超清 → 1080P 高码率 → 1080P 高清，没有权限时自动降级</span>
+                </span>
+                <span class="opt-param">-q</span>
+              </label>
+              <label class="opt">
+                <input type="radio" name="quality" value="low">
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">省流量优先</span>
+                  <span class="opt-desc">480P 清晰 → 360P 流畅，适合只当背景音听</span>
+                </span>
+                <span class="opt-param">-q</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="opt-group">
+            <div class="opt-head">
+              <h3>编码格式</h3>
+              <span class="hint">单选，拿不准就用自动</span>
+            </div>
+            <div class="opt-list" role="radiogroup" aria-label="编码格式">
+              <label class="opt">
+                <input type="radio" name="encoding" value="auto" checked>
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">自动</span>
+                  <span class="opt-desc">交给 BBDown 按平台给的顺序选</span>
+                </span>
+                <span class="opt-param">默认</span>
+              </label>
+              <label class="opt">
+                <input type="radio" name="encoding" value="hevc">
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">HEVC 优先</span>
+                  <span class="opt-desc">同画质体积更小，但老电脑可能播不动</span>
+                </span>
+                <span class="opt-param">--encoding-priority</span>
+              </label>
+              <label class="opt">
+                <input type="radio" name="encoding" value="avc">
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">AVC 兼容优先<span class="tag">老设备</span></span>
+                  <span class="opt-desc">兼容性最好，剪辑软件、老播放器都认</span>
+                </span>
+                <span class="opt-param">--encoding-priority</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="opt-group">
+            <div class="opt-head">
+              <h3>下载内容</h3>
+              <span class="hint">只能选一种</span>
+            </div>
+            <div class="opt-list" role="radiogroup" aria-label="下载内容">
+              <label class="opt">
+                <input type="radio" name="content" value="normal" checked>
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">视频 + 音频</span>
+                  <span class="opt-desc">完整的视频文件，默认可直接播放</span>
+                </span>
+                <span class="opt-param">默认</span>
+              </label>
+              <label class="opt">
+                <input type="radio" name="content" value="audio">
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">只下音频</span>
+                  <span class="opt-desc">只保存音轨，适合播客、音乐、讲座</span>
+                </span>
+                <span class="opt-param">--audio-only</span>
+              </label>
+              <label class="opt">
+                <input type="radio" name="content" value="cover">
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">只要封面</span>
+                  <span class="opt-desc">只保存视频封面图，不下载内容</span>
+                </span>
+                <span class="opt-param">--cover-only</span>
+              </label>
+              <label class="opt">
+                <input type="radio" name="content" value="sub">
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">只要字幕</span>
+                  <span class="opt-desc">只保存弹幕外挂字幕文件</span>
+                </span>
+                <span class="opt-param">--sub-only</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="opt-group">
+            <div class="opt-head">
+              <h3>弹幕</h3>
+              <span class="hint">下载视频时才带得动</span>
+            </div>
+            <div class="opt-list" role="radiogroup" aria-label="弹幕">
+              <label class="opt">
+                <input type="radio" name="danmaku" value="none" checked>
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">不带弹幕</span>
+                  <span class="opt-desc">只保存干净的视频文件</span>
+                </span>
+                <span class="opt-param">默认</span>
+              </label>
+              <label class="opt">
+                <input type="radio" name="danmaku" value="with">
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">视频附带弹幕</span>
+                  <span class="opt-desc">额外存一份弹幕文件，播放器可加载</span>
+                </span>
+                <span class="opt-param">-dd</span>
+              </label>
+              <label class="opt">
+                <input type="radio" name="danmaku" value="only">
+                <span class="mark mark-radio" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">只要弹幕</span>
+                  <span class="opt-desc">只保存弹幕，不下视频</span>
+                </span>
+                <span class="opt-param">--danmaku-only</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="switch-row">
+            <label class="switch">
+              <input type="checkbox" id="mt" checked>
+              <span class="mark mark-box" aria-hidden="true"></span>
+              <span class="opt-body">
+                <span class="opt-label">多线程加速</span>
+                <span class="opt-desc">同时下载多段内容，速度更快</span>
+              </span>
+              <span class="opt-param">-mt</span>
+            </label>
+          </div>
+
+          <div class="opt-group">
+            <div class="opt-head">
+              <h3>选集范围</h3>
+              <span class="hint" id="partsHintTop">合集、多 P 视频用得上</span>
+            </div>
+            <div class="field">
+              <label class="field-label" for="parts">要下载第几集</label>
+              <input class="input input-mono" id="parts" type="text" placeholder="留空 = 全部" spellcheck="false" autocomplete="off">
+              <div class="chips">
+                <span class="chips-label">快速填写</span>
+                <button type="button" class="chip chip-mono" data-parts="ALL">ALL</button>
+                <button type="button" class="chip chip-mono" data-parts="LAST">LAST</button>
+                <button type="button" class="chip chip-mono" data-parts="1,2">1,2</button>
+                <button type="button" class="chip chip-mono" data-parts="3-5">3-5</button>
+              </div>
+              <p class="field-hint">写法：单集 <code>8</code>、多集 <code>1,2</code>、连续 <code>3-5</code>、全部 <code>ALL</code>、最后一集 <code>LAST</code>。</p>
+              <p class="field-error" id="partsError" hidden></p>
+            </div>
+          </div>
+
+          <div class="opt-group">
+            <div class="opt-head">
+              <h3>保存位置</h3>
+              <span class="hint">不填就存到 BBDown.exe 旁边</span>
+            </div>
+            <div class="field">
+              <label class="field-label" for="workDir">下载到哪个文件夹</label>
+              <input class="input input-mono" id="workDir" type="text" placeholder="D:\B站视频" spellcheck="false" autocomplete="off">
+              <p class="field-hint">网页没法调出系统的「选择文件夹」窗口，把路径填进来就行。文件夹不存在时，程序会自动创建。</p>
+              <p class="field-error" id="workDirError" hidden></p>
+            </div>
+          </div>
+
+          <div class="opt-group" id="listGroup" hidden>
+            <div class="opt-head">
+              <h3>列表下载辅助</h3>
+              <span class="hint">一次性下几百个视频时很有用</span>
+            </div>
+            <div class="field field-inline">
+              <label class="field-label" for="delay">每个视频之间歇</label>
+              <div class="inline-control">
+                <input class="input input-mono input-num" id="delay" type="number" min="0" max="120" step="1" value="5" inputmode="numeric">
+                <span class="unit">秒</span>
+              </div>
+              <p class="field-hint" id="delayHint">防止请求太密被限流，建议 5 秒。</p>
+            </div>
+            <div class="switch-row switch-row-tight">
+              <label class="switch">
+                <input type="checkbox" id="archive">
+                <span class="mark mark-box" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">记住已下载，中断后跳过</span>
+                  <span class="opt-desc">下次重新运行同一条命令时，已完成的视频不会重下</span>
+                </span>
+                <span class="opt-param">--save-archives-to-file</span>
+              </label>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <details class="manual">
+        <summary>
+          <span class="manual-title">识别规则速查</span>
+          <span class="manual-sub">遇到没认出来的链接时再看</span>
+        </summary>
+        <div class="manual-body">
+          <dl class="manual-list">
+            <div>
+              <dt>单视频</dt>
+              <dd><code>BV1xxxxxxxxx</code>、<code>av12345</code>，或任意带 <code>/video/</code> 的视频链接。链接里的 <code>?p=3</code> 会自动填进选集。</dd>
+            </div>
+            <div>
+              <dt>番剧 / 影视</dt>
+              <dd>含 <code>/bangumi/play/ep123</code> 或 <code>ss123</code> 的地址。</dd>
+            </div>
+            <div>
+              <dt>课程</dt>
+              <dd>含 <code>/cheese/play/</code> 的地址。</dd>
+            </div>
+            <div>
+              <dt>合集 / 系列</dt>
+              <dd>新版 <code>space.bilibili.com/…/lists/…?type=season</code>（合集）或 <code>type=series</code>（系列）会先换成旧格式地址再交给程序——直接喂新链接，BBDown 会把它当成 UP 主主页，把全部投稿都下一遍。</dd>
+            </div>
+            <div>
+              <dt>收藏夹</dt>
+              <dd>带 <code>/favlist?fid=…</code> 的地址。</dd>
+            </div>
+            <div>
+              <dt>UP 主主页</dt>
+              <dd><code>space.bilibili.com/数字</code>。BBDown 本身只会把投稿地址导出成一份 <code>UP昵称的投稿视频.txt</code>，所以生成的 .bat 分两步：先导出清单，再按清单逐个下载。视频多时可能要跑很久。</dd>
+            </div>
+            <div>
+              <dt>短链接</dt>
+              <dd><code>b23.tv/…</code> 要先在浏览器里打开，再把地址栏里的完整链接复制过来——网页读不到它最终跳到哪个地址。</dd>
+            </div>
+            <div>
+              <dt>纯数字</dt>
+              <dd>只给一串数字时，网页无法联网确认它是 av 号、合集号还是系列号，所以一律按 av 号（单视频）处理。合集和系列的号码还会互相撞车——同一个数字可能同时是某个系列和另一位 UP 主的合集，不猜才是安全的。</dd>
+            </div>
+          </dl>
+          <p class="manual-note">页面不会把粘贴的原文直接拼进命令。它只从中取出 BV 号、av 号，或者重新拼一个干净的 B 站地址——多出来的字、奇怪的符号都不会进入命令。</p>
+        </div>
+      </details>
+    </div>
+
+    <aside class="side-col">
+      <section class="output" id="output" aria-label="生成的命令">
+        <div class="output-head">
+          <div class="output-step"><span class="mono">04</span> 输出</div>
+          <div class="output-file" id="batName">BBDown下载-未识别.bat</div>
+        </div>
+
+        <div class="cmd-wrap">
+          <div class="cmd" id="cmd"><span class="cmd-empty">粘贴链接后，这里会出现可以直接运行的命令。</span></div>
+        </div>
+
+        <div class="lock-note" id="lockNote" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="9.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8.2 10.5V8a3.8 3.8 0 0 1 7.6 0v2.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>
+          <span>这是 UP 主的全部投稿。请先在上面的识别卡片里勾选确认，或勾上「只解析，不下载」先只导出地址清单。</span>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="copyBtn" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="8.5" y="8.5" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M15.5 5.5h-9a2 2 0 0 0-2 2v9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <span id="copyLabel">复制命令</span>
+          </button>
+          <button type="button" class="btn btn-ghost" id="batBtn" disabled>
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 18.5h14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span>下载 .bat</span>
+          </button>
+        </div>
+
+        <div class="output-section">
+          <div class="output-label">本次启用的参数</div>
+          <div class="flags" id="flagList">
+            <p class="flags-empty">还没有额外参数，只下载最高画质的视频本体。</p>
+          </div>
+        </div>
+
+        <div class="output-section output-notes">
+          <p>把命令粘到 BBDown.exe 所在文件夹的命令行里运行；或直接下载 .bat 放进那个文件夹，双击即可。</p>
+          <p>1080P 高码率、4K 等画质，需要先用 <code>BBDown login</code> 扫码登录大会员账号。</p>
+          <p id="listNote" hidden>列表类建议保留「间歇」和「断点跳过」，几百个视频的列表下上好几天也正常。</p>
+          <p id="upNote" hidden>UP 主主页是两步脚本：先让 BBDown 生成「UP昵称的投稿视频.txt」，脚本只从这类文件里取最新的一份逐条下载。开跑前旧的同名单会挪进「旧清单」子目录，不删任何文件，也不会碰你自己放的 urls.txt 等其他 .txt。清单上千条时，跑几小时到一天都正常，中途关掉可以下次接着跑。面板里是 .bat 的完整内容，复制后请先存成 .bat 文件再双击，不要直接粘进命令行。</p>
+        </div>
+      </section>
+
+      <p class="side-foot">本页只生成命令，不包含 BBDown 程序本身。</p>
+    </aside>
+  </main>
+
+  <footer class="footer">
+    <p>BBDown 是第三方开源下载工具，请自行获取 BBDown.exe 后与生成的 .bat 放在同一文件夹。本页面不收集、不传输任何内容，关掉网络也能用。</p>
+  </footer>
+
+</div>
+<noscript><p class="noscript">这个页面需要开启 JavaScript 才能识别链接并生成命令。</p></noscript>
+<script>
+/* BBDown 命令生成器 —— 纯前端逻辑
+   安全约定：用户原文永不进入命令行；只从原文中提取 token，
+   再按白名单重建为 BV 号 / av 号 / bilibili.com 地址。 */
+(function () {
+  "use strict";
+
+  /* ---------------- 基础工具 ---------------- */
+
+  var ESC_MAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+  function esc(value) {
+    return String(value === undefined || value === null ? "" : value).replace(/[&<>"']/g, function (ch) {
+      return ESC_MAP[ch];
+    });
+  }
+
+  function isBiliHost(host) {
+    var h = String(host || "").toLowerCase();
+    return h === "bilibili.com" || /\.bilibili\.com$/.test(h);
+  }
+
+  function cleanPath(path) {
+    return String(path || "").replace(/[^A-Za-z0-9/_.-]/g, "");
+  }
+
+  function trimUrlTail(url) {
+    return String(url).replace(/[)\].,;:!?，。；：、）】"'”’]+$/g, "");
+  }
+
+  /* ---------------- 第一步：输入净化 ---------------- */
+
+  var RE_B23 = /b23\.tv\/[A-Za-z0-9]+/i;
+  var RE_URL = /https?:\/\/[^\s"'<>【】（）]+/i;
+  var RE_BV = /BV1[A-Za-z0-9]{9}/;
+  var RE_AV = /av\d+/i;
+  var RE_NUM = /\d{4,}/;
+
+  function sanitize(raw) {
+    if (!raw || !String(raw).trim()) return null;
+    var text = String(raw);
+
+    var m = text.match(RE_B23);
+    if (m) {
+      return { token: "https://" + m[0].replace(/\/+$/, ""), from: "short" };
+    }
+
+    m = text.match(RE_URL);
+    if (m) {
+      return { token: trimUrlTail(m[0]), from: "url" };
+    }
+
+    m = text.match(RE_BV);
+    if (m) return { token: m[0], from: "bv" };
+
+    m = text.match(RE_AV);
+    if (m) return { token: "av" + m[0].slice(2), from: "av" };
+
+    m = text.match(RE_NUM);
+    if (m) return { token: m[0], from: "num" };
+
+    return null;
+  }
+
+  /* ---------------- 第二步：分类 ---------------- */
+
+  function mk(opt) {
+    return Object.assign(
+      {
+        kind: "video",
+        tone: "ok",
+        typeLabel: "单视频",
+        idLabel: "编号",
+        id: "",
+        target: "",
+        bat: "单视频",
+        p: null,
+        list: false,
+        notes: [],
+        status: "已识别"
+      },
+      opt
+    );
+  }
+
+  function pFromUrl(text) {
+    if (!/^https?:\/\//i.test(text)) return null;
+    try {
+      var p = new URL(text).searchParams.get("p");
+      return p && /^\d+$/.test(p) ? p : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function note(text, level) {
+    return { text: text, level: level || "info" };
+  }
+
+  function videoBv(bv, p) {
+    var notes = [];
+    if (p) {
+      notes.push(note("链接里带着 p=" + p + "，已填进下面的选集；这是一段多 P 视频。"));
+    }
+    return mk({
+      kind: "video",
+      tone: "ok",
+      typeLabel: "单视频",
+      idLabel: "BV 号",
+      id: bv,
+      target: bv,
+      bat: "单视频",
+      p: p,
+      notes: notes
+    });
+  }
+
+  function videoAv(av, p) {
+    return mk({
+      kind: "video",
+      tone: "ok",
+      typeLabel: "单视频",
+      idLabel: "av 号",
+      id: av,
+      target: av,
+      bat: "单视频",
+      p: p,
+      notes: p ? [note("链接里带着 p=" + p + "，已填进下面的选集。")] : []
+    });
+  }
+
+  function unknownRec(extra) {
+    var notes = [];
+    if (extra) notes.push(note(extra, "warn"));
+    notes.push(
+      note("现在能认的写法：BV 号、av 号、视频链接、番剧 / 课程链接、合集 / 系列 / 收藏夹链接、UP 主主页。")
+    );
+    return mk({
+      kind: "unknown",
+      tone: "bad",
+      typeLabel: "还不能用",
+      idLabel: "",
+      id: "",
+      target: "",
+      bat: "",
+      notes: notes,
+      status: "没认出来"
+    });
+  }
+
+  function classify(token) {
+    var t = String(token || "").trim();
+    if (!t) return unknownRec("");
+
+    /* 纯数字：按 av 号处理 */
+    if (/^\d{4,}$/.test(t)) {
+      return mk({
+        kind: "video",
+        tone: "warn",
+        typeLabel: "单视频 · 按 av 号处理",
+        idLabel: "识别到的号码",
+        id: t,
+        target: "av" + t,
+        bat: "单视频",
+        notes: [
+          note(
+            "纯数字已按 av 号（单视频）处理。如果这是合集 / 系列的号码，网页没法联网核实，请粘贴完整链接，或改用 EXE 版工具自动识别。",
+            "warn"
+          )
+        ],
+        status: "按 av 号处理"
+      });
+    }
+
+    var av = t.match(/^av(\d+)$/i) || t.match(/\/video\/av(\d+)/i);
+    if (av) return videoAv("av" + av[1], pFromUrl(t));
+
+    var bv = t.match(/^BV1[A-Za-z0-9]{9}$/);
+    if (bv) return videoBv(bv[0], null);
+
+    if (!/^https?:\/\//i.test(t)) {
+      return unknownRec("这段内容里没有找到可用的链接或号码。");
+    }
+
+    var u;
+    try {
+      u = new URL(t);
+    } catch (e) {
+      return unknownRec("链接不完整，可能被截断了。");
+    }
+
+    var host = u.hostname.toLowerCase();
+    if (host === "b23.tv" || /\.b23\.tv$/.test(host)) {
+      return mk({
+        kind: "short",
+        tone: "warn",
+        typeLabel: "短链接 · 还差一步",
+        idLabel: "短链",
+        id: t,
+        target: "",
+        bat: "",
+        status: "需要补一步",
+        notes: [
+          note(
+            "网页读不到短链接会跳到哪里。请先在浏览器里打开它，等跳转完成后，把地址栏里的完整链接复制回来。",
+            "warn"
+          )
+        ]
+      });
+    }
+
+    if (!isBiliHost(host)) {
+      return unknownRec("这是一个站外链接。这个页面只处理 bilibili.com 的地址。");
+    }
+
+    var path = cleanPath(u.pathname) || "/";
+    var q = u.searchParams;
+
+    /* 视频链接：只取 BV / av 号本身 */
+    var urlBv = path.match(/\/video\/(BV1[A-Za-z0-9]{9})/);
+    if (urlBv) return videoBv(urlBv[1], pFromUrl(t));
+
+    /* 番剧 / 影视 */
+    var bangumi = path.match(/^\/bangumi\/play\/(?:ep|ss)\d+/i);
+    if (bangumi) {
+      return mk({
+        kind: "bangumi",
+        tone: "ok",
+        typeLabel: "番剧 / 影视",
+        idLabel: "剧集编号",
+        id: bangumi[0].split("/").pop(),
+        target: "https://www.bilibili.com" + bangumi[0],
+        bat: "番剧",
+        list: true,
+        notes: [note("番剧可以选集：在下面填 1,2 或 3-5，也可以 ALL 全下。")]
+      });
+    }
+
+    /* 课程 */
+    var cheese = path.match(/^\/cheese\/play\/([A-Za-z0-9]+)/i);
+    if (cheese) {
+      return mk({
+        kind: "cheese",
+        tone: "ok",
+        typeLabel: "课程",
+        idLabel: "课程编号",
+        id: cheese[1],
+        target: "https://www.bilibili.com" + cheese[0],
+        bat: "课程",
+        list: true
+      });
+    }
+
+    /* 新版合集 / 系列 lists 链接 */
+    if (host === "space.bilibili.com") {
+      var lists = path.match(/^\/(\d+)\/lists\/(\d+)\/?$/);
+      if (lists) {
+        var listType = String(q.get("type") || "").toLowerCase();
+        var sid = lists[2];
+        if (listType === "season" || listType === "series") {
+          var isCollection = listType === "season";
+          return mk({
+            kind: isCollection ? "collection" : "series",
+            tone: "ok",
+            typeLabel: isCollection ? "合集" : "系列",
+            idLabel: isCollection ? "合集号" : "系列号",
+            id: sid,
+            target:
+              "https://www.bilibili.com/channel/" +
+              (isCollection ? "collectiondetail" : "seriesdetail") +
+              "?sid=" +
+              sid,
+            bat: isCollection ? "合集" : "系列",
+            list: true,
+            notes: [
+              note(
+                "这是新版 lists 链接，已自动换成旧格式地址。直接喂新链接，程序会把它当成 UP 主主页，把全部投稿都下一遍。"
+              )
+            ]
+          });
+        }
+        return unknownRec("这个 lists 链接没有标明是合集还是系列，请从合集 / 系列页面重新复制一次地址。");
+      }
+    }
+
+    /* 旧版合集 / 系列 */
+    if (/^\/channel\/collectiondetail/i.test(path) && /^\d+$/.test(q.get("sid") || "")) {
+      return mk({
+        kind: "collection",
+        tone: "ok",
+        typeLabel: "合集",
+        idLabel: "合集号",
+        id: q.get("sid"),
+        target: "https://www.bilibili.com/channel/collectiondetail?sid=" + q.get("sid"),
+        bat: "合集",
+        list: true
+      });
+    }
+
+    if (/^\/channel\/seriesdetail/i.test(path) && /^\d+$/.test(q.get("sid") || "")) {
+      return mk({
+        kind: "series",
+        tone: "ok",
+        typeLabel: "系列",
+        idLabel: "系列号",
+        id: q.get("sid"),
+        target: "https://www.bilibili.com/channel/seriesdetail?sid=" + q.get("sid"),
+        bat: "系列",
+        list: true
+      });
+    }
+
+    /* medialist 形式：business 参数决定是合集还是系列 */
+    if (path.indexOf("/medialist/") !== -1) {
+      var business = q.get("business");
+      var bizId = q.get("business_id");
+      if ((business === "space_collection" || business === "space_series") && /^\d+$/.test(bizId || "")) {
+        var isCol = business === "space_collection";
+        return mk({
+          kind: isCol ? "collection" : "series",
+          tone: "ok",
+          typeLabel: isCol ? "合集" : "系列",
+          idLabel: isCol ? "合集号" : "系列号",
+          id: bizId,
+          target:
+            "https://" +
+            host +
+            path +
+            "?business=" +
+            business +
+            "&business_id=" +
+            bizId,
+          bat: isCol ? "合集" : "系列",
+          list: true
+        });
+      }
+      return unknownRec("这个 medialist 地址缺少合集 / 系列的标识，建议改用合集页面上复制出来的链接。");
+    }
+
+    /* 收藏夹 */
+    if (host === "space.bilibili.com") {
+      var fav = path.match(/^\/(\d+)\/favlist\/?$/i);
+      if (fav) {
+        if (!/^\d+$/.test(q.get("fid") || "")) {
+          return unknownRec("这个收藏夹地址里缺少 fid，请从收藏夹页面重新复制完整链接。");
+        }
+        return mk({
+          kind: "fav",
+          tone: "ok",
+          typeLabel: "收藏夹",
+          idLabel: "收藏夹号",
+          id: q.get("fid"),
+          target: "https://space.bilibili.com/" + fav[1] + "/favlist?fid=" + q.get("fid"),
+          bat: "收藏夹",
+          list: true,
+          notes: [note("收藏夹需要登录状态才能读取，运行前请先确认已经登录。")]
+        });
+      }
+
+      /* UP 主主页 */
+      var space = path.match(/^\/(\d+)(?:\/[A-Za-z0-9_-]+)*\/?$/);
+      if (space) {
+        return mk({
+          kind: "up",
+          tone: "warn",
+          typeLabel: "UP 主主页 · 全部投稿",
+          idLabel: "UP 主 UID",
+          id: space[1],
+          target: "https://space.bilibili.com/" + space[1],
+          bat: "UP主全部投稿",
+          list: true,
+          status: "需要确认",
+          notes: [
+            note(
+              "BBDown 不支持直接下载 UP 主的全部投稿，只会把这批视频的地址导出成「UP昵称的投稿视频.txt」。下面的 .bat 分两步：先导出清单，再按清单逐个下载。视频可能上百上千个，确认前请三思。",
+              "warn"
+            ),
+            note("只勾「只解析，不下载」时，脚本只导出这份清单，不会下载任何视频。")
+          ]
+        });
+      }
+    }
+
+    return unknownRec("这个地址暂时不在支持范围内。");
+  }
+
+  /* ---------------- 参数模型 ---------------- */
+
+  var QUALITY = {
+    auto: { flags: [], label: "自动最高" },
+    manual: { flags: ["-ia"], label: "运行时手动挑" },
+    "1080": { flags: ["-q", '"1080P 高码率,1080P 高清,720P 高清"'], label: "1080P 优先" },
+    "4k": { flags: ["-q", '"4K 超清,1080P 高码率,1080P 高清"'], label: "4K 优先" },
+    low: { flags: ["-q", '"480P 清晰,360P 流畅"'], label: "省流量优先" }
+  };
+
+  var ENCODING = {
+    auto: { flags: [], label: "自动" },
+    hevc: { flags: ["--encoding-priority", '"hevc,av1,avc"'], label: "HEVC 优先" },
+    avc: { flags: ["--encoding-priority", '"avc,av1,hevc"'], label: "AVC 兼容优先" }
+  };
+
+  function modeOf(o) {
+    if (o.info) return "info";
+    if (o.danmaku === "only") return "danmaku";
+    return o.content;
+  }
+
+  function cleanParts(value) {
+    var s = String(value || "").replace(/\s+/g, "").toUpperCase();
+    if (!s) return { ok: true, value: "" };
+    if (!/^(ALL|LAST|\d+([,-]\d+)*)$/.test(s)) return { ok: false, value: "" };
+    return { ok: true, value: s };
+  }
+
+  function cleanWorkDir(value) {
+    var s = String(value || "").trim();
+    if (!s) return { ok: true, value: "" };
+    if (/["<>|\r\n]/.test(s)) {
+      return { ok: false, value: "", msg: "路径里不要包含英文双引号或 < > | 这些符号。" };
+    }
+    if (/\\$/.test(s) && !/^[A-Za-z]:\\$/.test(s)) s = s.replace(/\\+$/, "");
+    return { ok: true, value: s, warn: /%/.test(s) ? "路径里的 % 在命令行里会被当成变量，尽量换个名字。" : "" };
+  }
+
+  function quoteTarget(target) {
+    return /^https?:/i.test(target) ? '"' + target + '"' : target;
+  }
+
+  /* UP 主主页：BBDown 只会导出「UP昵称的投稿视频.txt」，必须分两步执行 */
+  function buildUpScript(rec, o) {
+    var mode = modeOf(o);
+    var infoOnly = mode === "info";
+    var flags = [];
+    var second = [];
+    var workDirValue = cleanWorkDir(o.workDir || "").value;
+
+    function flagSeg(t) { second.push({ t: t, c: "flag" }); }
+    function argSeg(t) { second.push({ t: t, c: "arg" }); }
+
+    if (!infoOnly) {
+      if (o.mt) {
+        flagSeg("-mt");
+        flags.push(["-mt", "多线程加速"]);
+      }
+
+      var q = QUALITY[o.quality] || QUALITY.auto;
+      if (q.flags.length === 2) {
+        flagSeg(q.flags[0]);
+        argSeg(q.flags[1]);
+        flags.push([q.flags[0] + " …", "清晰度：" + q.label]);
+      } else if (q.flags.length === 1) {
+        flagSeg(q.flags[0]);
+        flags.push([q.flags[0], "清晰度：" + q.label]);
+      }
+
+      var enc = ENCODING[o.encoding] || ENCODING.auto;
+      if (enc.flags.length === 2) {
+        flagSeg(enc.flags[0]);
+        argSeg(enc.flags[1]);
+        flags.push([enc.flags[0] + " …", "编码优先：" + enc.label]);
+      }
+
+      if (o.content === "audio") {
+        flagSeg("--audio-only");
+        flags.push(["--audio-only", "只保存音频"]);
+      }
+      if (o.content === "cover") {
+        flagSeg("--cover-only");
+        flags.push(["--cover-only", "只保存封面图"]);
+      }
+      if (o.content === "sub") {
+        flagSeg("--sub-only");
+        flags.push(["--sub-only", "只保存字幕"]);
+      }
+      if (o.danmaku === "with" && mode === "normal") {
+        flagSeg("-dd");
+        flags.push(["-dd", "视频附带弹幕文件"]);
+      }
+      if (o.danmaku === "only") {
+        flagSeg("--danmaku-only");
+        flags.push(["--danmaku-only", "只保存弹幕"]);
+      }
+
+      if (workDirValue) {
+        flagSeg("--work-dir");
+        argSeg('"' + workDirValue + '"');
+        flags.push(["--work-dir", "保存到 " + workDirValue]);
+      }
+      if (o.archive) {
+        flagSeg("--save-archives-to-file");
+        flags.push(["--save-archives-to-file", "记住已下载，中断后跳过"]);
+      }
+    }
+
+    var lines = [];
+    function line(segs) { lines.push(segs || []); }
+    var tgt = quoteTarget(rec.target);
+
+    line([{ t: "@echo off", c: "meta" }]);
+    line([{ t: "chcp 65001 >nul", c: "meta" }]);
+    line([{ t: "cd /d %~dp0", c: "meta" }]);
+    line([]);
+    line([{ t: ":: 第 1 步：让 BBDown 导出全部投稿地址", c: "comment" }]);
+    line([{ t: ":: 它写成「UP昵称的投稿视频.txt」；旧清单只移不删，避免跟新清单混用", c: "comment" }]);
+    line([{ t: 'if exist "*的投稿视频.txt" (', c: "meta" }]);
+    line([{ t: '  if not exist "旧清单" mkdir "旧清单"', c: "meta" }]);
+    line([{ t: '  move /y "*的投稿视频.txt" "旧清单" >nul 2>nul', c: "meta" }]);
+    line([{ t: ")", c: "meta" }]);
+    line([]);
+    line([{ t: "BBDown.exe", c: "bin" }, { t: tgt, c: "target" }]);
+    line([]);
+    line([{ t: ":: 只从「*的投稿视频.txt」里取最新的一份", c: "comment" }]);
+    line([{ t: 'set "LIST="', c: "meta" }]);
+    line([{ t: 'for /f "usebackq delims=" %%f in (`dir /b /a-d /o-d "*的投稿视频.txt" 2^>nul`) do if not defined LIST set "LIST=%%f"', c: "meta" }]);
+    line([{ t: 'if not defined LIST for /f "usebackq delims=" %%f in (`dir /b /a-d /o-d "*.txt" 2^>nul`) do if not defined LIST set "LIST=%%f"', c: "meta" }]);
+    line([{ t: "if not defined LIST goto nofile", c: "meta" }]);
+    line([{ t: 'set "FIRST="', c: "meta" }]);
+    line([{ t: 'for /f "usebackq delims=" %%l in ("%LIST%") do if not defined FIRST set "FIRST=%%l"', c: "meta" }]);
+    line([{ t: 'echo %FIRST% | findstr /i /c:"bilibili.com/video/" >nul || goto nofile', c: "meta" }]);
+    line([]);
+    line([{ t: "echo 清单文件：%LIST%", c: "meta" }]);
+
+    if (!infoOnly) {
+      line([]);
+      line([{ t: ":: 第 2 步：按清单逐个下载", c: "comment" }]);
+      line([{ t: 'for /f "usebackq delims=" %%a in ("%LIST%") do (', c: "meta" }]);
+      line([{ t: "  BBDown.exe", c: "bin" }, { t: '"%%a"', c: "target" }].concat(second));
+      if (o.delay !== "" && o.delay !== null) {
+        line([{ t: "  timeout /t " + o.delay + " /nobreak >nul", c: "meta" }]);
+      }
+      line([{ t: ")", c: "meta" }]);
+      line([]);
+      line([{ t: "echo 全部完成，清单保留在 %LIST%。", c: "meta" }]);
+    } else {
+      line([]);
+      line([{ t: "echo 清单已导出：%LIST%，本次没有下载视频。", c: "meta" }]);
+    }
+
+    line([{ t: "pause", c: "meta" }]);
+    line([{ t: "exit /b", c: "meta" }]);
+    line([]);
+    line([{ t: ":nofile", c: "meta" }]);
+    line([{ t: "echo 没有找到投稿清单（应为「UP昵称的投稿视频.txt」）。", c: "meta" }]);
+    line([{ t: "echo 常见原因：没有登录、Cookie 过期、BBDown 版本过旧、网络问题。", c: "meta" }]);
+    line([{ t: "pause", c: "meta" }]);
+
+    var text = lines
+      .map(function (lineSegs) {
+        return lineSegs.map(function (seg) { return seg.t; }).join(" ");
+      })
+      .join("\r\n") + "\r\n";
+
+    return {
+      display: lines,
+      text: text,
+      bat: text,
+      isScript: true,
+      flags: flags,
+      emptyFlags: infoOnly ? "只导出地址清单，不下载视频。" : ""
+    };
+  }
+
+  function buildCommand(rec, o) {
+    if (!rec || !rec.target) return null;
+    if (rec.kind === "up") return buildUpScript(rec, o);
+
+    var mode = modeOf(o);
+    var segs = [{ t: "BBDown", c: "bin" }];
+    var flags = [];
+    var partsValue = cleanParts(o.parts || "").value;
+    var workDirValue = cleanWorkDir(o.workDir || "").value;
+
+    function addSeg(t, c) {
+      segs.push({ t: t, c: c || "flag" });
+    }
+
+    function addFlag(t, desc) {
+      addSeg(t, "flag");
+      flags.push([t, desc]);
+    }
+
+    if (mode === "info") {
+      addFlag("-info", "只解析链接，不下载文件");
+    } else {
+      if (o.mt && (mode === "normal" || mode === "audio")) addFlag("-mt", "多线程加速");
+
+      if (mode === "normal") {
+        var q = QUALITY[o.quality] || QUALITY.auto;
+        if (q.flags.length === 2) {
+          addSeg(q.flags[0]);
+          addSeg(q.flags[1], "arg");
+          flags.push([q.flags[0] + " …", "清晰度：" + q.label]);
+        } else if (q.flags.length === 1) {
+          addFlag(q.flags[0], "清晰度：" + q.label);
+        }
+
+        var enc = ENCODING[o.encoding] || ENCODING.auto;
+        if (enc.flags.length === 2) {
+          addSeg(enc.flags[0]);
+          addSeg(enc.flags[1], "arg");
+          flags.push([enc.flags[0] + " …", "编码优先：" + enc.label]);
+        }
+      }
+
+      if (mode === "normal" && partsValue) {
+        addSeg("-p");
+        addSeg(partsValue, "arg");
+        flags.push(["-p " + partsValue, "选集范围：" + partsValue]);
+      }
+
+      if (o.content === "audio") addFlag("--audio-only", "只保存音频");
+      if (o.content === "cover") addFlag("--cover-only", "只保存封面图");
+      if (o.content === "sub") addFlag("--sub-only", "只保存字幕");
+
+      if (o.danmaku === "with" && mode === "normal") addFlag("-dd", "视频附带弹幕文件");
+      if (o.danmaku === "only") addFlag("--danmaku-only", "只保存弹幕");
+
+      if (workDirValue) {
+        addSeg("--work-dir");
+        addSeg('"' + workDirValue + '"', "arg");
+        flags.push(["--work-dir", "保存到 " + workDirValue]);
+      }
+
+      if (rec.list) {
+        if (o.delay !== "" && o.delay !== null) {
+          addSeg("--delay-per-page");
+          addSeg(String(o.delay), "arg");
+          flags.push(["--delay-per-page " + o.delay, "每个视频之间歇 " + o.delay + " 秒"]);
+        }
+        if (o.archive) addFlag("--save-archives-to-file", "记住已下载，中断后跳过");
+      }
+    }
+
+    addSeg(quoteTarget(rec.target), "target");
+
+    return {
+      segs: segs,
+      text: segs.map(function (s) { return s.t; }).join(" "),
+      flags: flags,
+      isScript: false,
+      emptyFlags: ""
+    };
+  }
+
+  function batContent(commandText) {
+    return "@echo off\r\nchcp 65001 >nul\r\ncd /d %~dp0\r\n" + commandText + "\r\npause\r\n";
+  }
+
+  /* ---------------- 页面逻辑 ---------------- */
+
+  var hasDom = typeof document !== "undefined";
+
+  if (hasDom) {
+    var state = {
+      raw: "",
+      rec: null,
+      token: null,
+      upConfirm: false,
+      copyLabelCurrent: "复制命令"
+    };
+
+    var el = {};
+    var ids = [
+      "source", "recog", "parts", "partsError", "partsHintTop", "workDir", "workDirError",
+      "delay", "archive", "info", "mt", "listGroup", "cmd",
+      "batName", "copyBtn", "copyLabel", "batBtn", "flagList", "lockNote",
+      "listNote", "upNote", "delayHint", "clearBtn",
+      "infoCard", "infoNote", "optionsHint"
+    ];
+
+    function cacheEls() {
+      ids.forEach(function (id) {
+        el[id] = document.getElementById(id);
+      });
+    }
+
+    function getOptions() {
+      function picked(name) {
+        var node = document.querySelector('input[name="' + name + '"]:checked');
+        return node ? node.value : "";
+      }
+      var parts = cleanParts(el.parts.value);
+      var dir = cleanWorkDir(el.workDir.value);
+      var delayRaw = String(el.delay.value || "").trim();
+      var delay = delayRaw === "" ? "" : Math.max(0, Math.min(120, parseInt(delayRaw, 10) || 0));
+
+      return {
+        mt: el.mt.checked,
+        quality: picked("quality"),
+        encoding: picked("encoding"),
+        content: picked("content"),
+        danmaku: picked("danmaku"),
+        parts: parts.ok ? parts.value : "",
+        workDir: dir.ok ? dir.value : "",
+        delay: delay,
+        archive: el.archive.checked,
+        info: el.info.checked,
+        mode: ""
+      };
+    }
+
+    /* 表单状态联动 */
+    function syncDisabled() {
+      var o = getOptions();
+      var mode = modeOf(o);
+      var isInfo = mode === "info";
+      var notNormal = mode !== "normal";
+      var isUp = !!(state.rec && state.rec.kind === "up");
+
+      function setDisabled(node, disabled) {
+        if (!node) return;
+        node.disabled = disabled;
+        var row = node.closest(".opt, .switch");
+        if (row) row.classList.toggle("is-off", disabled);
+      }
+
+      document.querySelectorAll('input[name="quality"], input[name="encoding"], input[name="content"], input[name="danmaku"]').forEach(function (node) {
+        var group = node.name;
+        var off = isInfo;
+        if (!off) {
+          if (group === "quality" || group === "encoding") off = notNormal;
+          if (group === "danmaku") off = notNormal && mode !== "danmaku";
+        }
+        setDisabled(node, off);
+      });
+
+      setDisabled(el.mt, isInfo || mode === "cover" || mode === "sub" || mode === "danmaku");
+      setDisabled(el.parts, isInfo || notNormal || isUp);
+      document.querySelectorAll("[data-parts]").forEach(function (btn) {
+        btn.disabled = isInfo || notNormal || isUp;
+      });
+      if (el.partsHintTop) {
+        el.partsHintTop.textContent = isUp ? "UP 主主页按清单逐条下载，选集用不上" : "合集、多 P 视频用得上";
+      }
+      if (el.delayHint) {
+        el.delayHint.textContent = isUp
+          ? "UP 主主页会按这个秒数在两条之间插入 timeout 等待，防止请求太密。"
+          : "防止请求太密被限流，建议 5 秒。";
+      }
+      setDisabled(el.workDir, isInfo);
+      setDisabled(el.delay, isInfo);
+      setDisabled(el.archive, isInfo);
+
+      /* 只解析：置顶开关点亮 + 下方设置整组变灰 */
+      if (el.infoCard) el.infoCard.classList.toggle("is-on", isInfo);
+      if (el.infoNote) el.infoNote.hidden = !isInfo;
+      if (el.optionsHint) {
+        el.optionsHint.textContent = isInfo
+          ? "只解析模式：下面的设置全部停用"
+          : "不勾也能用，默认就是最高画质";
+      }
+      var infoBody = el.info.closest(".step-body");
+      if (infoBody) infoBody.classList.toggle("is-info", isInfo);
+
+      /* 高亮当前行 */
+      document.querySelectorAll(".opt input, .switch input").forEach(function (node) {
+        var row = node.closest(".opt, .switch");
+        if (row) row.classList.toggle("is-active", node.checked && !node.disabled);
+      });
+
+      /* 值校验提示 */
+      var parts = cleanParts(el.parts.value);
+      if (!parts.ok && el.parts.value.trim()) {
+        el.partsError.hidden = false;
+        el.partsError.textContent = "这个写法看不懂。可以填 8、1,2、3-5、ALL 或 LAST。";
+      } else {
+        el.partsError.hidden = true;
+      }
+
+      var dir = cleanWorkDir(el.workDir.value);
+      if (!dir.ok) {
+        el.workDirError.hidden = false;
+        el.workDirError.textContent = dir.msg;
+      } else if (dir.warn) {
+        el.workDirError.hidden = false;
+        el.workDirError.textContent = dir.warn;
+        el.workDirError.style.color = "var(--amber)";
+      } else {
+        el.workDirError.hidden = true;
+        el.workDirError.style.color = "";
+      }
+
+      renderOutput(o);
+    }
+
+    /* 识别卡片 */
+    function renderRecognition() {
+      var box = el.recog;
+      var raw = el.source.value;
+      state.raw = raw;
+
+      if (!raw.trim()) {
+        state.rec = null;
+        state.token = null;
+        state.lastAutoTarget = undefined;
+        state.autoParts = "";
+        state.upConfirm = false;
+        if (el.listGroup) el.listGroup.hidden = true;
+        box.dataset.tone = "idle";
+        box.innerHTML =
+          '<div class="recog-top"><span class="recog-dot"></span>等待输入</div>' +
+          '<p class="recog-idle">粘贴 B 站链接、整段分享文字，或者直接输入 BV 号 / av 号都可以。识别只在本机进行，内容不会发到任何地方。</p>' +
+          '<div class="recog-examples"><code>BV1xx411c7mD</code><code>av12345</code><code>space.bilibili.com/…/lists/…?type=season</code></div>';
+        syncDisabled();
+        return;
+      }
+
+      var s = sanitize(raw);
+      state.token = s ? s.token : null;
+      var rec = s ? classify(s.token) : unknownRec("这段内容里没有找到链接、BV 号或 av 号。");
+      state.rec = rec;
+
+      box.dataset.tone = rec.tone;
+
+      var html = "";
+      html += '<div class="recog-top"><span class="recog-dot"></span>' + esc(rec.status) + "</div>";
+      html += '<p class="recog-type">' + esc(rec.typeLabel) + "</p>";
+
+      html += '<dl class="recog-grid">';
+      if (rec.id) {
+        html += "<dt>" + esc(rec.idLabel) + "</dt><dd><code>" + esc(rec.id) + "</code></dd>";
+      }
+      if (rec.target) {
+        html += "<dt>传给 BBDown</dt><dd><code>" + esc(rec.target) + "</code></dd>";
+      } else if (rec.kind === "unknown" && state.token) {
+        html += "<dt>读到的内容</dt><dd><code>" + esc(state.token) + "</code></dd>";
+      }
+      html += "</dl>";
+
+      if (rec.notes.length) {
+        html += '<ul class="recog-notes">';
+        rec.notes.forEach(function (n) {
+          html +=
+            '<li class="recog-note" data-level="' + esc(n.level) + '"><span class="marker">' +
+            (n.level === "warn" ? "!" : "·") +
+            "</span><span>" + esc(n.text) + "</span></li>";
+        });
+        html += "</ul>";
+      }
+
+      if (rec.kind === "unknown") {
+        html +=
+          '<div class="recog-examples"><code>BV1xx411c7mD</code><code>av12345</code><code>…/bangumi/play/ep123</code><code>space.bilibili.com/123/lists/456?type=series</code></div>';
+      }
+
+      if (rec.kind === "up") {
+        html +=
+          '<label class="confirm-row"><input type="checkbox" id="upConfirm"' +
+          (state.upConfirm ? " checked" : "") +
+          '><span>我知道这会下载全部投稿（分两步执行），仍要生成脚本。</span></label>';
+      }
+
+      box.innerHTML = html;
+
+      var confirmBox = document.getElementById("upConfirm");
+      if (confirmBox) {
+        confirmBox.addEventListener("change", function () {
+          state.upConfirm = confirmBox.checked;
+          renderOutput();
+        });
+      }
+
+      /* 新目标出现时，套用推荐默认值 */
+      if (state.lastAutoTarget !== (rec.target || "")) {
+        state.upConfirm = false;
+        if (rec.p) {
+          el.parts.value = String(rec.p);
+        } else if (state.autoParts && el.parts.value === state.autoParts) {
+          el.parts.value = "";
+        }
+        state.autoParts = rec.p ? String(rec.p) : "";
+        state.lastAutoTarget = rec.target || "";
+      }
+
+      if (el.listGroup) el.listGroup.hidden = !rec.list;
+
+      syncDisabled();
+    }
+
+    /* 输出面板 */
+    function renderOutput(options) {
+      var o = options || getOptions();
+      var rec = state.rec;
+      var built = buildCommand(rec, o);
+      var copyBtn = el.copyBtn;
+      var batBtn = el.batBtn;
+
+      if (!built) {
+        el.cmd.innerHTML =
+          '<span class="cmd-empty">' +
+          (state.raw.trim()
+            ? "链接还不能用。先处理上面识别卡片里的提示，命令会自动出现。"
+            : "粘贴链接后，这里会出现可以直接运行的命令。") +
+          "</span>";
+        el.flagList.innerHTML = '<p class="flags-empty">还没有额外参数。</p>';
+        copyBtn.disabled = true;
+        batBtn.disabled = true;
+        el.batName.textContent = "BBDown下载-未识别.bat";
+        el.lockNote.hidden = true;
+        el.listNote.hidden = true;
+        el.upNote.hidden = true;
+        return;
+      }
+
+      var html = "";
+      if (built.display) {
+        html = built.display
+          .map(function (lineSegs) {
+            return lineSegs
+              .map(function (seg) {
+                return '<span class="' + seg.c + '">' + esc(seg.t) + "</span>";
+              })
+              .join(" ");
+          })
+          .join("\n");
+      } else {
+        built.segs.forEach(function (seg, i) {
+          if (i > 0) html += " ";
+          html += '<span class="' + seg.c + '">' + esc(seg.t) + "</span>";
+        });
+      }
+      el.cmd.innerHTML = html;
+
+      state.copyLabelCurrent = built.isScript ? "复制脚本" : "复制命令";
+      el.copyLabel.textContent = state.copyLabelCurrent;
+
+      if (built.flags.length) {
+        el.flagList.innerHTML = built.flags
+          .map(function (f) {
+            return '<div class="flag-row"><code>' + esc(f[0]) + "</code><span>" + esc(f[1]) + "</span></div>";
+          })
+          .join("");
+      } else {
+        el.flagList.innerHTML =
+          '<p class="flags-empty">' +
+          esc(built.emptyFlags || "还没有额外参数，只下载最高画质的视频本体。") +
+          "</p>";
+      }
+
+      var blocked = rec.kind === "up" && !o.info && !state.upConfirm;
+      copyBtn.disabled = blocked;
+      batBtn.disabled = blocked;
+      el.lockNote.hidden = !blocked;
+      var fileName = batFileName(rec, o.info);
+      el.batName.textContent = fileName;
+      el.batName.title = fileName;
+      el.listNote.hidden = !rec.list;
+      el.upNote.hidden = rec.kind !== "up";
+    }
+
+    /* 文件名带上能区分脚本的标识：类型 + BV/av/编号 + 选集 + 是否只解析 */
+    var NAME_ID_PREFIX = { up: "UID", fav: "fid", collection: "sid", series: "sid" };
+
+    function batFileName(rec, infoOnly) {
+      if (!rec || !rec.bat) return "BBDown下载-未识别.bat";
+      var parts = ["BBDown下载", rec.bat];
+      var id = String(rec.id || "").trim();
+      if (id) parts.push((NAME_ID_PREFIX[rec.kind] || "") + id);
+      if (rec.p) parts.push("P" + rec.p);
+      if (infoOnly) parts.push("只解析");
+      var name = parts.join("-").replace(/[\\/:*?"<>|\u0000-\u001f]/g, "").trim();
+      if (name.length > 90) name = name.slice(0, 90);
+      return name + ".bat";
+    }
+
+    /* 复制 */
+    function copyText(text, done) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () {
+          fallbackCopy(text, done);
+        });
+      } else {
+        fallbackCopy(text, done);
+      }
+    }
+
+    function fallbackCopy(text, done) {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "-1000px";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+        done();
+      } catch (e) {
+        /* 静默失败，用户仍可手动选中命令 */
+      }
+      document.body.removeChild(ta);
+    }
+
+    function flashCopied() {
+      var label = el.copyLabel;
+      label.textContent = "已复制";
+      window.clearTimeout(flashCopied.timer);
+      flashCopied.timer = window.setTimeout(function () {
+        label.textContent = state.copyLabelCurrent || "复制命令";
+      }, 1600);
+    }
+
+    function currentCommand() {
+      var built = buildCommand(state.rec, getOptions());
+      return built ? built.text : "";
+    }
+
+    function downloadBat() {
+      if (!state.rec || !state.rec.target) return;
+      var opts = getOptions();
+      var built = buildCommand(state.rec, opts);
+      if (!built) return;
+      var payload = built.bat || batContent(built.text);
+      var blob = new Blob([payload], { type: "application/octet-stream" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url;
+      a.download = batFileName(state.rec, opts.info);
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    }
+
+    function bind() {
+      el.source.addEventListener("input", renderRecognition);
+
+      document.querySelectorAll('input[name="quality"], input[name="encoding"], input[name="content"], input[name="danmaku"], #mt, #info, #archive')
+        .forEach(function (node) {
+          node.addEventListener("change", function () {
+            /* 「只要弹幕」和「只下音频 / 封面 / 字幕」互斥，切换时先把对方复位 */
+            if (node.name === "content" && node.checked && node.value !== "normal") {
+              var only = document.querySelector('input[name="danmaku"][value="only"]');
+              if (only && only.checked) document.querySelector('input[name="danmaku"][value="none"]').checked = true;
+            }
+            if (node.name === "danmaku" && node.checked && node.value === "only") {
+              document.querySelector('input[name="content"][value="normal"]').checked = true;
+            }
+            syncDisabled();
+          });
+        });
+
+      el.parts.addEventListener("input", syncDisabled);
+      el.workDir.addEventListener("input", syncDisabled);
+      el.delay.addEventListener("input", syncDisabled);
+
+      document.querySelectorAll("[data-parts]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          el.parts.value = btn.getAttribute("data-parts");
+          syncDisabled();
+          el.parts.focus();
+        });
+      });
+
+      document.querySelectorAll("[data-example]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          el.source.value = btn.getAttribute("data-example");
+          renderRecognition();
+          el.source.focus();
+        });
+      });
+
+      el.clearBtn.addEventListener("click", function () {
+        el.source.value = "";
+        el.parts.value = "";
+        el.workDir.value = "";
+        el.info.checked = false;
+        state.upConfirm = false;
+        state.lastAutoTarget = undefined;
+        state.autoParts = "";
+        renderRecognition();
+        el.source.focus();
+      });
+
+      el.copyBtn.addEventListener("click", function () {
+        var text = currentCommand();
+        if (!text) return;
+        copyText(text, flashCopied);
+      });
+
+      el.batBtn.addEventListener("click", downloadBat);
+    }
+
+    function init() {
+      cacheEls();
+      bind();
+      renderRecognition();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", init);
+    } else {
+      init();
+    }
+  }
+
+  /* 便于在控制台或测试中复用 */
+  if (typeof window !== "undefined") {
+    window.BBDownCore = {
+      sanitize: sanitize,
+      classify: classify,
+      buildCommand: buildCommand,
+      batContent: batContent,
+      cleanParts: cleanParts,
+      cleanWorkDir: cleanWorkDir
+    };
+  }
+})();
+
+</script>
+</body>
+</html>
