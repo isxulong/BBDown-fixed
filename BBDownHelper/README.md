@@ -1,9 +1,9 @@
 # BBDown 下载助手（EXE 界面版）
 
-给零基础中文用户用的 BBDown 图形界面：粘贴链接 → 自动识别 → 勾需求 → 选位置 → 开始下载，全程在一个窗口里完成。程序内部调起**同目录下的 BBDown.exe** 干活。
+给零基础中文用户用的 BBDown 图形界面：粘贴链接 → 自动识别 → 勾需求 → 选位置 → 开始下载，全程在一个窗口里完成。程序内部调起 **core\ 子文件夹下的 BBDown.exe** 干活（v3.3 起）。
 
 ## 使用方法
-1. 把 `BBDownHelper.exe` 和 `BBDown.exe`（1.6.3 登录修复版）放进**同一个文件夹**；
+1. 用完整压缩包整体解压：顶层为 `BBDownHelper.exe`，`core\` 文件夹里是 `BBDown.exe`（1.6.3 登录修复版）/ `aria2c.exe` / `ffmpeg.exe`；
 2. 双击 `BBDownHelper.exe`（无需安装任何运行时，自带 .NET 8）；
 3. 粘贴 B 站链接 / BV号 / av号 / 整段分享文字 —— 自动识别并显示结果卡片；
 4. 需要登录画质（1080P高码率/4K）时先点「扫码登录」，用手机 B 站 App 扫码；
@@ -16,7 +16,14 @@
   - `RecognitionService.cs` 识别门面（短链解析后重分类、多候选消歧、单命中提示可反悔）
   - `CommandBuilder.cs` 参数组装（全部出自 BBDown CommandLineInvoker.cs 源码）
 - `src/BBDownHelper/` —— Avalonia 11 界面（识别卡片/候选选择/选项互斥/进度日志/取消/登录）
-- `tests/BBDownHelper.Core.Tests/` —— 66 个 xUnit 用例（v3.2：v3.1 的 59 个 + 控制台编码 7 个），Linux 上实跑通过
+- `tests/BBDownHelper.Core.Tests/` —— 77 个 xUnit 用例（v3.3：v3.2 的 66 个 + core 布局路径与迁移 11 个），Linux 上实跑通过
+
+## v3.3 变更（core 子文件夹改造：防误双击 BBDown.exe）
+- **核心路径**：BBDown.exe 唯一位置改为 `<程序所在目录>\core\BBDown.exe`（Core 新增 `CoreLayout`，MainWindow 全部改走它，无第二处硬编码）。报错文案同步指引 v1.0.2 完整压缩包解压
+- **登录凭据**：BBDown.data 的存在检测与 cookie 读取（BiliProbe 链路）改读 `core\BBDown.data`——与 BBDown 1.6.3 的 APP_DIR 口径一致（它把凭据写在自身 exe 目录）
+- **首次启动自动迁移**：老用户从 v1.0.0/v1.0.1 升级时，顶层的 `BBDown.data` / `BBDown.refresh_token` / `BBDownTV.data` 自动移入 core\（core\ 已有的不覆盖，清单外文件不碰，core\ 不存在时不动用户数据）。迁移逻辑在 Core 层（`CoreLayout.PlanMigration` 纯函数 + `CoreDataMigrator.Execute` 执行器，失败只记日志不崩、按未登录态继续）
+- **子进程工作目录保持顶层**：BBDown 侧已核实（isxulong/BBDown-fixed 源码）——aria2c/ffmpeg 按「当前目录 → 自身 exe 目录(core\) → PATH」顺序查找（BBDownUtil.FindExecutable），UP 主投稿清单 txt 写在进程工作目录；两者在 core\ 布局下均不受影响
+- 界面/日志中无版本号展示（Title 为「BBDown 下载助手」），无升级项
 
 ## v3.2 变更（日志中文乱码修复 + 程序图标）
 - **日志中文乱码**：BBDown 按系统 ANSI 代码页写 stdout（中文 Windows=GBK/936），v3.1 硬按 UTF-8 解码把中文全变成 U+FFFD（）。新增 Core 纯函数 `ConsoleEncoding.Resolve(ansiCodePage)`（注册 CodePagesEncodingProvider，取系统 ANSI 代码页、取不到回落 GB18030），重定向子进程的 StandardOutputEncoding/StandardErrorEncoding 改用 `ConsoleEncoding.Current`；-ia/扫码登录走可见控制台无重定向不受影响，BiliProbe 走 HTTP 不涉及；日志区只在窗口内（无写文件），解码修正后即为正确文本
