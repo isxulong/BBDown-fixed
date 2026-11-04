@@ -68,3 +68,33 @@ public sealed class RecognitionResult
     public bool IsListKind => Kind is InputKind.Collection or InputKind.Series
         or InputKind.Favorites or InputKind.UpSpace;
 }
+
+/// <summary>
+/// v3.4 预览卡数据：识别完成后自动联网取的标题+封面。
+/// 字段口径（2026-11-04 实测 api.bilibili.com）：
+///  - view?bvid=/aid=：data.pic（封面，注意返回 http:// 前缀）、data.pages（数组长度=分P数）、
+///    data.title、data.owner.name；不存在的视频 code=-400（请求错误）/-403（权限不足）≠ 0；
+///  - medialist/info：data.title、data.media_count、data.cover（可能为空串）、data.upper.name。
+/// </summary>
+public sealed class VideoPreview
+{
+    public InputKind Kind { get; init; }         // SingleVideo / Collection / Series
+
+    /// <summary>标题（空=接口没给，UI 显示占位）</summary>
+    public string Title { get; init; } = "";
+
+    /// <summary>UP 主名（空=不显示该行）</summary>
+    public string UpName { get; init; } = "";
+
+    /// <summary>封面 URL，已规范成 https 直链；空=无封面（UI 显示占位色块）</summary>
+    public string CoverUrl { get; init; } = "";
+
+    /// <summary>单视频分 P 数（0=接口没给；1=不显示分 P 行）</summary>
+    public int PageCount { get; init; }
+
+    /// <summary>合集/系列视频数（单视频为 0）</summary>
+    public int MediaCount { get; init; }
+
+    /// <summary>true=接口明确 code != 0（视频不存在/已删除），UI 显示一句温和提示</summary>
+    public bool NotFound { get; init; }
+}
