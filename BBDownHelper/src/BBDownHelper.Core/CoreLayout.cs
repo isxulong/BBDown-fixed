@@ -12,13 +12,18 @@ public static class CoreLayout
     public const string BbdownExeName = "BBDown.exe";
     public const string BbdownDataName = "BBDown.data";
 
+    /// <summary>v3.5：检查更新的间隔缓存文件（core\.update-check.json）。</summary>
+    public const string UpdateCheckCacheName = ".update-check.json";
+
     /// <summary>
-    /// BBDown（1.6.3 fixed）按 APP_DIR = 自身 exe 目录读写的凭据数据文件。
+    /// BBDown（1.6.3 fixed）按 APP_DIR = 自身 exe 目录读写的凭据/状态数据文件。
     /// 老版本（v1.0.0/v1.0.1）布局里这些文件与 BBDown.exe 同在顶层，
     /// 升级到 core\ 布局后必须搬进 core\，否则 BBDown 找不到登录态。
+    /// v3.4（质检 P3）：补 BBDown.archives——「已下载跳过」记录同样读写于 APP_DIR
+    /// （BBDown Program.Methods.cs:252/262），不迁移会丢失「记住已下载」状态。
     /// </summary>
     public static readonly IReadOnlyList<string> LegacyDataFiles =
-        new[] { "BBDown.data", "BBDown.refresh_token", "BBDownTV.data" };
+        new[] { "BBDown.data", "BBDown.refresh_token", "BBDownTV.data", "BBDown.archives" };
 
     /// <summary>core\ 子目录完整路径。</summary>
     public static string CoreDir(string baseDir) => Path.Combine(baseDir, CoreDirName);
@@ -28,6 +33,10 @@ public static class CoreLayout
 
     /// <summary>core\BBDown.data 完整路径——登录状态判定与 cookie 读取的统一口径。</summary>
     public static string BbdownDataPath(string baseDir) => Path.Combine(baseDir, CoreDirName, BbdownDataName);
+
+    /// <summary>v3.5：core\.update-check.json 完整路径——检查更新的 24 小时间隔缓存。</summary>
+    public static string UpdateCheckCachePath(string baseDir) =>
+        Path.Combine(baseDir, CoreDirName, UpdateCheckCacheName);
 
     /// <summary>
     /// 迁移计划（纯函数，可单测）：顶层存在、且 core\ 里还没有的数据文件才搬；
@@ -60,14 +69,20 @@ public sealed record CoreDataMigrationResult(
 /// </summary>
 public static class CoreDataMigrator
 {
-    public static CoreDataMigrationResult Execute(string baseDir)
+    public static CoreDataMigrationResult Execute(string baseDir) =>
+        Execute(baseDir, Directory.EnumerateFiles);
+
+    /// <summary>
+    /// 可注入列举器的重载（测试用：可注入抛异常的列举器验证「绝不崩」）。
+    /// </summary>
+    internal static CoreDataMigrationResult Execute(string baseDir, Func<string, IEnumerable<string>> listFiles)
     {
         string coreDir = CoreLayout.CoreDir(baseDir);
         // core\ 不存在 = 安装不完整（只拷了单个 exe 没解压完整包）：
         // 不创建 core\ 也不动用户数据，等用户按完整包解压后下次启动再迁
         if (!Directory.Exists(coreDir)) return CoreDataMigrationResult.Empty;
 
-        var plan = CoreLayout.PlanMigration(FileNames(baseDir), FileNames(coreDir));
+        var plan = CoreLayout.PlanMigration(FileNames(baseDir, listFiles), FileNames(coreDir, listFiles));
         var moved = new List<string>();
         var failed = new List<string>();
         var errors = new List<string>();
@@ -87,12 +102,26 @@ public static class CoreDataMigrator
         return new CoreDataMigrationResult(moved, failed, errors);
     }
 
-    private static string[] FileNames(string dir) =>
-        Directory.Exists(dir)
-            ? Directory.EnumerateFiles(dir)
-                .Select(p => Path.GetFileName(p))
-                .Where(n => n is not null)
-                .Select(n => n!)
-                .ToArray()
-            : Array.Empty<string>();
+    /// <summary>
+    /// 目录文件名列举。v3.4（质检 P3）：EnumerateFiles 包 try/catch，
+    /// 异常（权限/占用/句柄失效）返回空数组，守住「绝不崩」承诺——
+    /// 顶层列举失败=无事可搬；core\ 列举失败=视为空（core 已有文件不存在的口径下全量搬入）。
+    /// </summary>
+    private static string[] FileNames(string dir, Func<string, IEnumerable<string>> listFiles)
+    {
+        try
+        {
+            return Directory.Exists(dir)
+                ? listFiles(dir)
+                    .Select(Path.GetFileName)
+                    .Where(n => n is not null)
+                    .Select(n => n!)
+                    .ToArray()
+                : Array.Empty<string>();
+        }
+        catch
+        {
+            return Array.Empty<string>();
+        }
+    }
 }
