@@ -5,5 +5,5 @@ rem  用法：双击本文件，用手机B站APP扫窗口里的二维码
 rem  说明：登录成功后会自动记住凭据，以后下载不用重复登录
 rem ==================================================
 cd /d %~dp0
-BBDown login
+"%~dp0core\BBDown.exe" login
 pause
