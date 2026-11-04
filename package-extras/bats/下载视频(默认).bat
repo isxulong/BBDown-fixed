@@ -6,5 +6,5 @@ rem        保存文件，再双击运行
 rem  BV号在哪：打开视频网页，地址栏里 BV 开头的那一串就是
 rem ==================================================
 cd /d %~dp0
-BBDown -mt BV12Rxq6nECN
+"%~dp0core\BBDown.exe" -mt BV12Rxq6nECN
 pause
