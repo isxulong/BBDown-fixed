@@ -1,21 +1,25 @@
-BBDown-fixed v1.0.0（EXE 界面版）
+BBDown-fixed v1.0.2（EXE 界面版）
 基于 BBDown 1.6.3 修复：扫码登录、凭据自动续期已修好，附带图形界面
+
+v1.0.2 更新：BBDown.exe 等核心组件收进 core 文件夹，顶层只剩
+BBDownHelper.exe，不会再误点出黑色窗口；bat 与命令生成器已同步适配
 
 【这个包里有什么】
 - BBDownHelper.exe   图形界面，日常下载就用它（双击即用）
-- BBDown.exe         命令行核心，界面在背后自动调用它，别删
-- aria2c.exe         加速下载，需与 BBDown.exe 同文件夹
-- ffmpeg.exe         合并音视频，需与 BBDown.exe 同文件夹
+- core\ 文件夹       核心组件（BBDown.exe / aria2c.exe / ffmpeg.exe），
+                     界面在背后自动调用，别删、不用双击里面的东西
 - bat下载命令生成器.html  双击用浏览器打开，批量下载 UP 主投稿时用它
 - 登录.bat           备用登录方式（一般用不到，见下）
 
 【第一次用 / 从旧版升级，必看】
-1. 从本修复版 v4 系列升级：文件夹里的 BBDown.data 直接保留，
-   凭据仍然有效，不用重新登录
-2. 从官方 1.6.3 或更早版本过来：旧 BBDown.data 已失效，先删掉，
+1. 从 v1.0.0 / v1.0.1 升级：解压新包后，把旧文件夹里的 BBDown.data
+   拷到新包顶层即可——首次双击 BBDownHelper.exe 时会自动把它
+   移进 core 文件夹，凭据仍然有效，不用重新登录
+2. 从本修复版 v4 系列升级：同上，BBDown.data 保留即可
+3. 从官方 1.6.3 或更早版本过来：旧 BBDown.data 已失效，先删掉，
    再重新登录一次
-3. 登录方式：双击「登录.bat」，用手机B站APP扫码；成功后文件夹里
-   会生成 BBDown.data，以后不用再扫（凭据到期前会自动续期）
+4. 登录方式：双击「登录.bat」，用手机B站APP扫码；成功后 core
+   文件夹里会生成 BBDown.data，以后不用再扫（凭据到期前会自动续期）
 
 【日常下载】
 双击 BBDownHelper.exe → 粘贴链接（BV号 / av号 / 视频页 / 合集页 / 短链都行）
