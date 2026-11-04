@@ -1,6 +1,11 @@
 BBDown 命令使用指南（零基础版）
 ======================================================
 
+在包根目录（.bat 文件所在的文件夹）手敲命令时，开头用 core\BBDown.exe，
+例如 core\BBDown.exe -mt BV12Rxq6nECN；也可以先输入 cd core 回车，
+进入 core 文件夹后直接用 BBDown.exe 开头。本指南的示例统一按
+前一种写法（core\BBDown.exe 开头）。
+
 一、30 秒上手
 ------------------------------------------------------
 1. 在文件夹里找到一个名字带你要的功能的 .bat 文件
@@ -33,7 +38,9 @@ AUDIO               只要音频，不要画面
 ------------------------------------------------------
 所有 .bat 文件里其实就一行核心命令，格式是：
 
-    BBDown [开关] BV号
+    core\BBDown.exe [开关] BV号
+
+（如果你已经 cd core 进了 core 文件夹，开头就写 BBDown.exe。）
 
 开关可以叠加，写几个都行。常用的有：
 
@@ -52,13 +59,13 @@ AUDIO               只要音频，不要画面
   --save-archives-to-file   记录已下载过的视频，下次自动跳过
 
 例子 1：下载视频并带弹幕、多线程：
-    BBDown -mt -dd BV12Rxq6nECN
+    core\BBDown.exe -mt -dd BV12Rxq6nECN
 
 例子 2：只要第 2 集的音频：
-    BBDown --audio-only -p 2 BV12Rxq6nECN
+    core\BBDown.exe --audio-only -p 2 BV12Rxq6nECN
 
 例子 3：下合集全部，并且每集之间歇 5 秒（防被限流）：
-    BBDown -mt -p ALL --delay-per-page 5 BV12Rxq6nECN
+    core\BBDown.exe -mt -p ALL --delay-per-page 5 BV12Rxq6nECN
 
 
 四、常见问题
@@ -72,8 +79,8 @@ A：本套 bat 结尾都加了 pause，正常情况下窗口会停住。
    如果还是闪退，多半是把命令改错了，重新对照本指南检查。
 
 Q：下载完没有视频文件，只有一堆零碎的？
-A：确认 ffmpeg.exe 和 BBDown.exe 在同一个文件夹里，
-   合并音视频需要它。
+A：确认 ffmpeg.exe 和 BBDown.exe 在同一个文件夹里
+   （本压缩包里它们都在 core 文件夹），合并音视频需要它。
 
 Q：想下 4K / 1080P高码率，结果只下到 1080P？
 A：这些画质需要登录大会员账号。先扫码登录，再下载。
