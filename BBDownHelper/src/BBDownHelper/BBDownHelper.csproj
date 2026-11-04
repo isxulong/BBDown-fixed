@@ -10,6 +10,10 @@
     <RootNamespace>BBDownHelper</RootNamespace>
     <!-- v3.2：exe 文件图标 + 任务栏/快捷方式图标 -->
     <ApplicationIcon>Assets\BBDownHelper.ico</ApplicationIcon>
+    <!-- v3.4：版本标识（exe 文件属性可见） -->
+    <!-- v3.5：内部版本升至 3.5.0；对外发布版本号（窗口标题/检查更新）单一来源在 Core 的 AppVersion -->
+    <!-- v3.6：内部版本升至 3.6.0（封面竞态修复 + 412 风控降级重试）；对外发布号仍为 1.0.3 不变 -->
+    <Version>3.6.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
