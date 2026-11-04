@@ -12,4 +12,9 @@
     <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- CoreDataMigrator.Execute(baseDir, listFiles) 内部可测重载：测试工程直接调用 -->
+    <InternalsVisibleTo Include="BBDownHelper.Core.Tests" />
+  </ItemGroup>
+
 </Project>
