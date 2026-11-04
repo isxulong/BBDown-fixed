@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="BBDownHelper.MainWindow"
+        Icon="avares://BBDownHelper/Assets/BBDownHelper.ico"
         Title="BBDown 下载助手" Width="880" Height="780"
         MinWidth="760" MinHeight="640">
   <ScrollViewer>
