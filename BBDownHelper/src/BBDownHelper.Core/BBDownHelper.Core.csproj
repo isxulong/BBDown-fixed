@@ -7,4 +7,9 @@
     <RootNamespace>BBDownHelper.Core</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- GBK/GB18030 等非 Unicode 代码页：子进程控制台输出解码用（ConsoleEncoding） -->
+    <PackageReference Include="System.Text.Encoding.CodePages" Version="8.0.0" />
+  </ItemGroup>
+
 </Project>
