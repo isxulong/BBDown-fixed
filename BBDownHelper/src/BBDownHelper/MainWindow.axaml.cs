@@ -56,6 +56,13 @@ public partial class MainWindow : Window
         CoverOnlyBox.IsCheckedChanged += (_, _) => ApplyMutex();
         SubOnlyBox.IsCheckedChanged += (_, _) => ApplyMutex();
         DOnly.IsCheckedChanged += (_, _) => ApplyMutex();
+        // v3.3：老用户从 v1.0.0/v1.0.1 升级时，BBDown.data 等还留在顶层——先搬进 core\，
+        // 再刷新登录状态。迁移失败（占用/权限）不崩：写日志后按未登录态继续。
+        var migration = CoreDataMigrator.Execute(_baseDir);
+        foreach (var name in migration.Moved)
+            AppendLog("已把老版本留下的 " + name + " 移入 core 文件夹。");
+        foreach (var err in migration.Errors)
+            AppendLog("老文件移入 core 失败，已跳过（" + err + "）。登录状态可能显示为未登录。");
         UpdateLoginStatus();
     }
 
@@ -208,7 +215,7 @@ public partial class MainWindow : Window
         InfoOnly = InfoBox.IsChecked == true
     };
 
-    private string BbdownPath() => Path.Combine(_baseDir, "BBDown.exe");
+    private string BbdownPath() => CoreLayout.BbdownPath(_baseDir);   // v3.3：core\BBDown.exe
 
     private async void OnStart(object? sender, RoutedEventArgs e)
     {
@@ -238,7 +245,7 @@ public partial class MainWindow : Window
 
         if (!File.Exists(BbdownPath()))
         {
-            StatusText.Text = "没找到 BBDown.exe。请把本程序和 BBDown.exe 放在同一个文件夹里再试。";
+            StatusText.Text = "没找到 core\\BBDown.exe。请使用 v1.0.2 完整压缩包解压，不要只拷贝单个 exe；core 文件夹里应包含 BBDown.exe。";
             return;
         }
 
@@ -259,6 +266,8 @@ public partial class MainWindow : Window
             {
                 FileName = BbdownPath(),
                 Arguments = sb.ToString(),
+                // v3.3：工作目录保持顶层（不指 core\）——UP 主投稿清单等相对路径产物落在顶层，
+                // 与界面指引文案一致；aria2c/ffmpeg 由 BBDown 按 工作目录→自身exe目录(core\)→PATH 查找
                 WorkingDirectory = _baseDir,
                 UseShellExecute = true
             };
@@ -286,6 +295,7 @@ public partial class MainWindow : Window
         var psi = new ProcessStartInfo
         {
             FileName = BbdownPath(),
+            // v3.3：工作目录保持顶层，理由同 -ia 路径（UP 清单落顶层；aria2c/ffmpeg 走 BBDown 自身目录查找）
             WorkingDirectory = _baseDir,
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -412,7 +422,7 @@ public partial class MainWindow : Window
     {
         if (!File.Exists(BbdownPath()))
         {
-            StatusText.Text = "没找到 BBDown.exe。请把本程序和 BBDown.exe 放在同一个文件夹里再试。";
+            StatusText.Text = "没找到 core\\BBDown.exe。请使用 v1.0.2 完整压缩包解压，不要只拷贝单个 exe；core 文件夹里应包含 BBDown.exe。";
             return;
         }
         // 扫码需要人看控制台：用 UseShellExecute 起可见控制台窗口
@@ -420,6 +430,8 @@ public partial class MainWindow : Window
         {
             FileName = BbdownPath(),
             Arguments = "login",
+            // v3.3：工作目录保持顶层；登录凭据由 BBDown 写进自身 exe 目录(core\)的 BBDown.data，
+            // 我们侧的登录状态检测同步读 core\BBDown.data
             WorkingDirectory = _baseDir,
             UseShellExecute = true
         };
@@ -435,7 +447,7 @@ public partial class MainWindow : Window
 
     private void UpdateLoginStatus()
     {
-        bool logged = File.Exists(Path.Combine(_baseDir, "BBDown.data"));
+        bool logged = File.Exists(CoreLayout.BbdownDataPath(_baseDir));   // v3.3：core\BBDown.data
         LoginStatus.Text = logged ? "已登录" : "未登录";
     }
 
@@ -443,7 +455,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            string path = Path.Combine(_baseDir, "BBDown.data");
+            string path = CoreLayout.BbdownDataPath(_baseDir);   // v3.3：core\BBDown.data
             return File.Exists(path) ? File.ReadAllText(path).Trim() : null;
         }
         catch { return null; }
