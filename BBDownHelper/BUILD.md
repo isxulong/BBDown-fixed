@@ -224,8 +224,8 @@ BBDown 的 `-ia` 需要用户在控制台里输入序号选画质，隐藏的重
    - 构造函数（L59-66）：启动时先执行迁移再刷新登录状态，成功/失败均写日志（失败按未登录态继续，不崩）；
    - L218 `BbdownPath()` → `CoreLayout.BbdownPath(_baseDir)`；
    - L248 / L425 两处报错文案 → 「没找到 core\BBDown.exe。请使用 v1.0.2 完整压缩包解压，不要只拷贝单个 exe；core 文件夹里应包含 BBDown.exe。」；
-   - L445 `UpdateLoginStatus` / L453 `ReadCookie` → 读 `core\BBDown.data`（BiliProbe cookie 链路即走 ReadCookie，同步）；
-   - L269 / L298 / L433 三处子进程 WorkingDirectory 保持 `_baseDir`（理由见上「BBDown 侧核实」），补注释说明依据。
+   - L448 `UpdateLoginStatus` / L454 `ReadCookie` → 读 `core\BBDown.data`（BiliProbe cookie 链路即走 ReadCookie，同步）；
+   - L271 / L299 / L435 三处子进程 WorkingDirectory 保持 `_baseDir`（理由见上「BBDown 侧核实」），补注释说明依据。
 3. **全解决方案 grep `BBDown.exe` / `_baseDir` / `BBDown.data`**：除上述各点与文档（README/BUILD）外无第二处硬编码路径；日志区展示的命令文本本来就是 `BBDown ...`（文件名未变），无需改。
 4. 版本标识：界面 Title 为「BBDown 下载助手」、日志无版本号输出——无升级项，如实说明。
 5. README.md 更新使用方法（core\ 布局）并新增 v3.3 变更小节。
@@ -251,3 +251,175 @@ BBDown 的 `-ia` 需要用户在控制台里输入序号选画质，隐藏的重
 
 - 迁移与 core\ 路径在 Windows 实机的端到端行为（真实从 v1.0.1 目录升级、扫码登录后凭据落 core\BBDown.data、误双击场景消失）：沙箱无 Windows GUI / 无 BBDown.exe，逻辑本体以 11 个单测覆盖（含真实 IO 的临时目录迁移），需组长打包后实机走查。
 - BBDown 侧结论基于 isxulong/BBDown-fixed main 分支源码静态阅读，未实际运行验证。
+
+
+---
+
+# v3.4 —— 输入后自动预览卡（标题+封面）+ v1.0.2 质检 P3 批处理
+
+## 背景
+
+用户拍板：输入网址/BV号后自动联网显示视频标题和封面预览卡。v3.3 的 BiliApiProbe 已具备联网探测地基（UA/Referer/cookie 管线、mock 注入、短链解析、medialist/view 两套探测），本版补 bvid 入口、pic/cover 字段与界面展示；一并并入 v1.0.2 质检记录的 4 个 P3 小待办。
+
+## 功能口径（2026-11-04 实测 API）
+
+- `view?bvid=` / `view?aid=` 均可用；`data.pic` 为封面 URL（注意是 `http://` 前缀，统一规范成 https）、`data.pages` 为数组（分 P 数）、`data.owner.name` 为 UP 主。
+- 视频不存在/删除 → `code=-400`（请求错误）；权限不足 → `code=-403`——两者统一走「这个视频可能不存在或已删除」温和提示。
+- `medialist/info?type=&biz_id=` 有 `data.cover`（部分合集/系列为空串）+ `data.upper.name` + `data.media_count`，无需再调 acc/info。
+- 触发链：输入 → 识别管线（400ms 防抖）→ 识别完成 → 预览取数（500ms 防抖 + CancellationToken 取消旧请求 + 代次校验过期不上屏）。裸数字多候选在用户选定前不出预览卡；UP 主主页输入不出预览卡（沿用现有生成器引导）；网络失败/超时静默不显示；任何异常路径不影响识别→解析→下载主流程。
+
+## 改动清单（文件:行号以 v3.4 源码为准）
+
+1. **`src/BBDownHelper.Core/Models.cs`**：L79 新增 `VideoPreview`（Kind/Title/UpName/CoverUrl/PageCount/MediaCount/NotFound）。
+2. **`src/BBDownHelper.Core/BiliProbe.cs`**：L17 导出 `UserAgent`；L31 `GetStringAsync` 增加 CancellationToken 重载（取消即返 null，静默）；L168 `ProbeViewPreviewAsync`（view 预览）；L177 `ViewUrlFor`（BV→`view?bvid=`、av→`view?aid=`，其余形态不探测）；L193 `ParseViewPreview`（code!=0→NotFound；pic http→https；pages 数组计数）；L231 `ProbeMediaListPreviewAsync`（medialist 预览，cover 可空串，失败静默）；L264 `NormalizeCoverUrl`。
+3. **`src/BBDownHelper.Core/PreviewService.cs`**（新文件，52 行）：识别结果→预览门面。仅 SingleVideo/Collection/Series 出预览；Collection/Series 从 URL 取 sid/business_id（type 5/8）；其余 Kind 返回 null。
+4. **`src/BBDownHelper.Core/DebounceGate.cs`**（新文件，39 行）：500ms 防抖闸 = 版本代次 + 可注入延迟函数 + CancellationTokenSource（Submit 取消旧一轮等待与在途请求）。
+5. **`src/BBDownHelper.Core/InputRecognizer.cs`**：L334 `AvFullRegex` 私有→公开（ViewUrlFor 复用，与公开的 BvFullRegex 同形态）。
+6. **`src/BBDownHelper.Core/CoreLayout.cs`**（质检 P3-2/P3-3）：L22-27 `LegacyDataFiles` 白名单加入 `BBDown.archives`（对应 BBDown Program.Methods.cs:252/262 的「已下载跳过」记录读写 APP_DIR\BBDown.archives）；L65-66 `Execute(baseDir)` 公开口径改走 L71 可注入 `Execute(baseDir, listFiles)` 内部重载；L99-112 `FileNames` 目录枚举包 try/catch，异常返回空数组（守住「绝不崩」）。
+7. **`src/BBDownHelper.Core/BBDownHelper.Core.csproj`**：L15-18 `InternalsVisibleTo` 给测试工程（调内部 Execute 重载）。
+8. **`src/BBDownHelper/MainWindow.axaml`**：L17-37 输入框下方预览卡（封面 120×75 占位+Image、类别行、标题两行截断、UP 主行）+ L35-37 NotFound 温和提示行。
+9. **`src/BBDownHelper/MainWindow.axaml.cs`**：L23-24 预览服务/防抖闸字段；L96 清空输入撤下预览卡；L104 识别完成后异步取预览；L168 裸数字候选选定后取预览；L178-192 `UpdatePreviewAsync`（Submit→隐藏→500ms→取数→代次校验→上屏，全程吞异常）；L194-200 `HidePreview`；L202-223 `ShowPreview`（合集/系列「合集 · 共 N 个视频」、多 P 显示分 P 行、NotFound 提示行）；L225-240 `LoadCoverAsync`（HttpClient 10s 超时，UA/Referer 同探测口径，失败留占位色块）。
+10. **`src/BBDownHelper/BBDownHelper.csproj`**：L14 `<Version>3.4.0</Version>`。
+11. **`tools/bat下载命令生成器.html`**（质检 P3-4）：bin 命令段新增 `bt`（bat 专用文本）字段——下载的 .bat 里 BBDown 调用行改为 `"%~dp0core\BBDown.exe"`（勾选 flat 布局时 `"%~dp0BBDown.exe"`），页面展示与复制文本保持 `core\BBDown.exe` / `BBDown` 不变；`buildCommand` 返回值新增 `bat` 字段，`downloadBat` 优先取之（`built.bat || batContent(built.text)` 兜底不变）。
+12. **`BUILD.md`**（质检 P3-1）：v3.3 段行号漂移修正——L445→L448、L453→L454、L269/L298/L433→L271/L299/L435（对应上面 v3.3 段内文）。
+
+## 测试记录（Linux 实跑，dotnet test）
+
+- 命令：`dotnet test tests/BBDownHelper.Core.Tests -p:UseSharedCompilation=false`（.NET SDK 8.0.404）
+- 结果：**Passed! Failed: 0, Passed: 117, Skipped: 0, Total: 117**——v3.3 的 77 项全绿 + v3.4 新增 40 项全绿（PreviewTests.cs 337 行约 30 项：view URL 形态/解析/NotFound/静默/取消、bvid 与 aid 入口 mock、medialist 预览、PreviewService 各 Kind 门控、DebounceGate 语义；CoreLayoutTests 新增 5 项：archives 白名单计划、顶层枚举异常不崩、core 枚举异常按空处理全搬、archives 实迁、原「清单外文件」测试改用 BBDown.log 让位）。
+- GUI 编译门：`dotnet build src/BBDownHelper`（Avalonia 11.2.2 XAML 编译 + MainWindow 预览逻辑）0 Warning 0 Error。
+- 生成器门（Node 实跑，沙箱 node 22）：提取页面核心脚本 eval 后跑 14 项断言全过——页面/复制文本保持 `core\BBDown.exe` 不变、下载 .bat 两处 bin 行均为 `"%~dp0core\BBDown.exe"`（flat 对应 `"%~dp0BBDown.exe"`）、up 脚本 `cd /d %~dp0` 保留、`batContent` 兜底接口不变。
+
+## 发布记录
+
+`dotnet publish` 沿用 v3.2/v3.3 参数（Release / win-x64 / self-contained / PublishSingleFile / EnableCompressionInSingleFile / IncludeNativeLibrariesForSelfExtract）：
+- 产出 → 交付名 **BBDownHelper-v3.4.exe**，45,640,060 字节
+- `file` 判定：`PE32+ executable (GUI) x86-64, for MS Windows`；PE 资源实检：RT_ICON ×7 + RT_GROUP_ICON ×1 + RT_VERSION ×1（与 v3.2/v3.3 相同的 7 尺寸图标组，图标保留）
+
+## v3.4 未验证范围（如实说明）
+
+- 沙箱无 Windows GUI、无真实 BBDown.exe：预览卡视觉效果（封面 16:10 裁切观感、两行截断、配色协调）与 B 站图床真实联网下载封面未实测，逻辑本体以 mock 注入单测覆盖，需组长打包后实机走查。
+- view/medialist 接口口径基于 2026-11-04 匿名 curl 实测（bvid 单视频、马督工系列 medialist 的 cover 为空串等），非登录态长链/合集真实形态未逐一实测。
+- 生成器 .bat 未在 Windows 实机双击运行（静态断言 + 与三件套 bat 形态一致）。
+
+# v3.5 —— 版本号显示 + 启动检查更新（并入 v1.0.3 发布）
+
+## 背景
+
+用户拍板：①窗口要显示版本号；②加「检查更新+提示」，**不做**自动下载替换自己；③与 v3.4 预览卡合并由组长统一打一个 v1.0.3 发布。本版为纯增量：检查更新任何异常不得影响启动与主流程。
+
+## 改动清单（文件:行号以 v3.5 源码为准）
+
+1. **`src/BBDownHelper.Core/AppVersion.cs`**（新文件，21 行）：发布版本号单一来源。`Release="1.0.3"` / `ReleaseTag="v1.0.3"` / `WindowTitle="BBDown-fixed 下载助手 v1.0.3"` / `CornerLabel`。窗口标题、角落版本小字、检查更新的「当前版本」全部从此取，界面与代码里不再有第二处版本字面量。
+2. **`src/BBDownHelper.Core/UpdateCheck.cs`**（新文件，222 行）：
+   - `UpdateCheckLogic`（纯函数，可单测）：`TryParseSemVer`（v 前缀可选/最多 3 段缺段补 0/预发布后缀忽略）、`CompareSemVer`（不可解析按 0.0.0）、`ShouldPrompt`（latest 必须可解析且严格大于当前，同版本/更旧/非法一律不提示）、`IsCacheFresh`（24h 间隔；负差值即时钟回拨按新鲜处理）、`ParseReleaseJson`（tag_name+html_url，字段缺失/JSON 非法返回 null）、`SerializeCache`/`DeserializeCache`。
+   - `UpdateChecker`（执行器）：`CheckAsync(currentTag, cachePath)` 三步——缓存新鲜则不发请求直接按缓存判定；否则请求 `https://api.github.com/repos/isxulong/BBDown-fixed/releases/latest`（HttpClient 5s 超时、UA 沿用 `BiliApiProbe.UserAgent`、Accept `application/vnd.github+json`），成功后写缓存；网络失败/超时不写缓存（下次启动再试）。`GetStringOverride`/`NowUtc`/`ReadTextOverride`/`WriteTextOverride` 全部可注入（与 BiliApiProbe 同一 mock 模式）。任何异常外层兜底返回 null，绝不抛出。
+3. **`src/BBDownHelper.Core/CoreLayout.cs`**：L16 `UpdateCheckCacheName=".update-check.json"` 常量；L37-39 `UpdateCheckCachePath(baseDir)` → `core\.update-check.json`。
+4. **`src/BBDownHelper/BBDownHelper.csproj`**：L15 `<Version>3.5.0</Version>`（内部程序集版本，exe 文件属性可见）。
+5. **`src/BBDownHelper/MainWindow.axaml`**：L7-9 根布局改 `Grid RowDefinitions="*,Auto"`（ScrollViewer + 底部常驻条）；L12-20 顶部「发现新版本 vX.Y.Z → 点此查看下载」提示条（默认 IsVisible=False）；L173-174 界面右下角常驻版本小字 `VersionCorner`；Window 属性里不再写死 Title。
+6. **`src/BBDownHelper/MainWindow.axaml.cs`**：L33-34 `_updateChecker`/`_updateUrl` 字段；L40-41 构造时 `Title=AppVersion.WindowTitle`、`VersionCorner.Text=AppVersion.CornerLabel`；L75-78 启动末尾异步 `_ = CheckForUpdateAsync()`（不 await、不阻塞启动）；L83-98 `CheckForUpdateAsync`（结果非空才在 UI 线程上屏，全程吞异常）；L100-109 `OnUpdateBannerClick`（Process.Start + UseShellExecute 打开发布页，打不开静默）。
+7. **`tools/bat下载命令生成器.html`**：L1216 masthead 文案「不上传 · 可离线 · 启动时检查一次更新」（原「不联网」已不准确，如实改）；L175-191 `.update-banner` 样式（默认 display:none）；L1223-1227 提示条 DOM（默认隐藏）；L2759 `init()` 里调用 `checkUpdate()`；L2771-2772 `CURRENT_VERSION="1.0.3"`（页面版本单一来源）与 `LATEST_RELEASE_API`；L2774-2798 `parseVer`/`isNewer`（与 C# 同口径：v 前缀可选/3 段/预发布忽略/解析不了宁可不提示）；L2800-2814 `checkUpdate()`（fetch latest release，isNewer 才显示提示条并填版本号与链接；网络失败/非 2xx/无 fetch 全部静默）；L2825-2827 `parseVer`/`isNewer`/`currentVersion` 挂到 `window.BBDownCore` 供测试复用。零外部依赖不变（无 script src、CSP connect-src * 允许该 fetch）。
+8. **`tests/BBDownHelper.Core.Tests/UpdateCheckTests.cs`**（新文件，338 行，61 个用例）：见下方测试记录。
+
+## 测试记录（Linux 实跑，dotnet test）
+
+- 命令：`dotnet test tests/BBDownHelper.Core.Tests -p:UseSharedCompilation=false`（.NET SDK 8.0.404）
+- 结果：**Passed! Failed: 0, Passed: 178, Skipped: 0, Total: 178**——v3.4 的 117 项全绿 + v3.5 新增 61 项全绿：
+  - 版本单一来源锁定（`AppVersion_SingleSource_Pinned`：Release/ReleaseTag/WindowTitle/CornerLabel 四字段钉死）
+  - SemVer 解析 6 合法形态 + 9 非法形态；比较 7 组；ShouldPrompt 6 判定（同版本/更旧/非法 latest/同版本预发布均不提示）
+  - 缓存新鲜度 5 判定（0s/23h59m/恰 24h/24h01m/时钟回拨负差值）
+  - release JSON 解析 1 全字段 + 8 非法/缺失；缓存序列化往返 + 5 非法
+  - `CheckAsync` 决策树 11 场景（mock 注入）：无缓存取数并写缓存、同版本不提示但仍写缓存、网络失败不写缓存、HTTP 异常静默、缓存新鲜零请求、缓存非更新版不提示且零请求、缓存过期重取并刷新时间戳、缓存读失败降级取数、缓存写失败仍返回结论、缓存损坏按缺失处理、真实文件 IO 落盘后二次启动命中缓存零请求
+  - `CoreLayout_UpdateCheckCachePath` 路径口径（平台无关断言）
+- GUI 编译门：`dotnet build src/BBDownHelper`（Avalonia XAML 编译，Grid 重布局 + 提示条 + 版本小字）0 Warning 0 Error。
+- 生成器门（Node 实跑，沙箱 node 22）：32 项断言全过——HTML 静态 7 项（提示条存在/默认无 show/masthead 文案/GitHub 接口/零外部脚本/版本常量/脚本可提取）+ eval 场景 25 项（旧导出未破坏、parseVer 6、isNewer 6、bat 回归 1、有新版本显示且链接正确 3、同版本/网络失败/fetch 缺失/HTTP 非 2xx 四场景均不显示不崩 4 等）。
+- **GitHub API 实网验证（沙箱可测，已测）**：`curl https://api.github.com/repos/isxulong/BBDown-fixed/releases/latest` 返回 `tag_name: "v1.0.2"`、`html_url: https://github.com/isxulong/BBDown-fixed/releases/tag/v1.0.2`，限流余量正常；另以临时 console 程序跑 `UpdateChecker` 真实 HTTP 路径（同 UA/Accept/5s 超时代码）：状态 200、耗时约 1.1s、解析出 v1.0.2、`ShouldPrompt("v1.0.3","v1.0.2")=False`（线上比当前旧，不提示——正确）、缓存文件成功落盘且第二次运行命中缓存不再发请求。即「当前无新版本」分支端到端实测通过；「有新版本」分支以 mock 单测覆盖（等组长发 v1.0.3 之后的下一个 release 后会自然走真实分支）。
+
+## 发布记录
+
+`dotnet publish` 沿用 v3.2/v3.3/v3.4 参数（Release / win-x64 / self-contained / PublishSingleFile / EnableCompressionInSingleFile / IncludeNativeLibrariesForSelfExtract）：
+- 产出 → 交付名 **BBDownHelper-v3.5.exe**，45,648,653 字节（43.53 MB）
+- `file` 判定：`PE32+ executable (GUI) x86-64, for MS Windows`；PE 资源实检：UTF-16 `3.5.0` 版本资源存在（6 处）、窗口标题常量「BBDown-fixed 下载助手 v1.0.3」存在、图标资源保留；bundle 清单含 BBDownHelper.Core.dll / BBDownHelper.dll / System.Text.Json.dll（检查更新代码随 Core 打进单文件；托管 DLL 经压缩打包，明文字符串不可直接 grep，属预期）
+
+## v3.5 未验证范围（如实说明）
+
+- 沙箱无 Windows GUI：窗口标题/右下角版本小字/顶部提示条的视觉效果与 Avalonia Grid 重布局的实机渲染未实测，XAML 已过编译门，需组长打包后实机走查；`Process.Start + UseShellExecute` 打开发布页未实机验证（Windows 标准用法）。
+- GitHub API 实测的是「无新版本」分支（线上最新 v1.0.2 < 当前 v1.0.3）；「有新版本 → 显示提示条 → 点击打开发布页」全链路以 mock 单测覆盖，待下一个真实 release 发布后自然验证。
+- 生成器页面在真实浏览器中的 fetch 跨域行为未实测（GitHub API 官方支持 CORS，CSP connect-src * 亦放行；Node eval 已覆盖渲染/静默逻辑）。
+- bat 三件套、BBDown 本体、使用说明 txt 均未动（任务边界）。
+
+
+
+# v3.6 —— 红蓝对抗两项 P2 发版前修复（封面竞态 + 412 风控静默拦截）
+
+在 v3.5 源码上修改，未另起项目。环境：Linux 沙箱（2 核），.NET SDK 8.0.404（沙箱重建后经 azureedge 断点续传重装，本版实装校验 `dotnet --version` = 8.0.404）。对外发布号保持 1.0.3 不变（AppVersion.Release 未动），内部程序集版本升为 3.6.0。
+
+## 修复 1（红队 P2-A）：封面竞态
+
+- 攻击场景：快速连续输入两个 BV 号，A 的封面响应慢于 B 的元数据到达 → UI 呈现「B 的标题 + A 的封面」错配卡。原缺陷：LoadCoverAsync 游离在 DebounceGate 代次机制外，`CoverImage.Source = bmp` 无条件赋值（v3.5 的 MainWindow L264-285）。
+- 修法（与预览元数据同一代次源 DebounceGate）：
+  - `MainWindow.axaml.cs` L228 / L242 / L261：代次 gen 从 UpdatePreviewAsync → ShowPreview(pv, gen) → LoadCoverAsync(url, gen) 贯穿传入；
+  - `MainWindow.axaml.cs` L269-287 LoadCoverAsync：在途下载改用 `_previewDebounce.Token`（新输入时 Submit 取消旧令牌）；字节到达后 `IsCurrent(gen)` 校验、解码后再校验一次，过期封面一律不上屏；
+  - 新增 `src/BBDownHelper.Core/CoverLoader.cs`（49 行）：封面 HTTP 下载移入 Core（取消令牌贯穿 HTTP 层），UI 侧只解码上屏；失败/取消返回 null 保持占位色块（静默契约不变）。
+
+## 修复 2（蓝队 P2-B）：预览请求被 B 站 412 风控静默拦截
+
+- 现象（蓝队实测）：带浏览器 UA 但缺 Accept / Accept-Language / sec-ch-ua / sec-fetch-* 时，api.bilibili.com/x/web-interface/view 返回 412，GetStringAsync 判非成功返回 null → 预览卡静默不出。
+- 修法（`src/BBDownHelper.Core/BiliProbe.cs`）：
+  - L81-95 `ApplyBrowserHeaders`（internal，两档）：首试补齐 Chrome 全家桶头（UA + Accept + Accept-Language + sec-ch-ua/-mobile/-platform + sec-fetch-dest/mode/site + Referer）；降级重试档只留 Referer、不带 UA（蓝队实测同 URL 无 UA 可 200）；
+  - L41-49 `GetStringAsync`：首试全头 → 412/403 则降级重试一次（无 UA）；其余失败（超时/404/网络异常）不重试；维持「静默失败返回 null」契约，无弹窗无阻塞；
+  - L29 新增 `SendOverride` 注入（internal，测试用）；L51-72 `TryGetAsync` 单次 GET，412/403 返回 Blocked 允许上层降级重试；
+  - medialist 端点走同一 GetStringAsync 管线，同逻辑自动覆盖（测试钉住）。
+
+### 412 场景沙箱 curl header 矩阵复现（2026-11-04 实网实测）
+
+| # | 请求形态 | 结果 |
+|---|---|---|
+| 1 | 无 UA 无任何头 | 200 |
+| 2 | 只有 UA + Referer（蓝队 412 形态） | **412**（复现） |
+| 3 | v3.6 首试：浏览器全家桶头 | **412** |
+| 4 | v3.6 降级重试：无 UA 留 Referer | **200** |
+| 5 | 全家桶头 + Edge UA | 412 |
+| 6 | 412 响应体 | HTML 风控挑战页 |
+| 7 | medialist 端点 + UA | 200（未受风控） |
+
+结论：本沙箱（数据中心 IP）上浏览器 UA 一律 412、无 UA 一律 200——首试补头救不回，**真正起作用的是无 UA 降级重试**（矩阵 #4）。居民宽带 IP 上首试可能直接 200（沙箱无法验证）。两档设计保证两种 IP 环境下预览卡都能出：首试头最接近真实浏览器（居民 IP 友好），被拦则降级重试兜底。
+
+### 真实 HTTP 路径端到端实测（沙箱实跑）
+
+临时 console 程序引用 Core 项目跑 `ProbeViewPreviewAsync("BV1GJ411x7h7")` 真实网络路径（生产代码无 mock）：结果返回完整预览（title=【官方 MV】Never Gonna Give You Up - Rick Astley / up=索尼音乐中国 / cover=https://i1.hdslb.com/...jpg），耗时 371ms——即「首试 412 → 降级重试 200 → 解析成功」全链路在生产代码上实测通过。
+
+## 改动清单（文件:行号以 v3.6 源码为准）
+
+1. `src/BBDownHelper.Core/BiliProbe.cs`：L29 SendOverride；L41-49 GetStringAsync 重试流；L51-72 TryGetAsync；L81-95 ApplyBrowserHeaders。
+2. `src/BBDownHelper.Core/CoverLoader.cs`（新文件，49 行）：封面下载器（GetBytesOverride/SendOverride 可注入）。
+3. `src/BBDownHelper/MainWindow.axaml.cs`：L25 _coverLoader 字段；L228/L242/L261 代次贯穿；L269-287 LoadCoverAsync（Token + 双重 IsCurrent 校验）。
+4. `src/BBDownHelper/BBDownHelper.csproj`：L16 `<Version>3.6.0</Version>`（AppVersion.Release 保持 "1.0.3"）。
+5. `tests/BBDownHelper.Core.Tests/RiskControlAndRaceTests.cs`（新文件，15 个用例）。
+6. 生成器 html 未改（见「未验证范围」下方说明）。
+
+## 测试记录（Linux 实跑，dotnet test）
+
+- 命令：`dotnet test tests/BBDownHelper.Core.Tests -p:UseSharedCompilation=false`（.NET SDK 8.0.404）
+- 修复中第一轮：193 用例 / 1 失败（`MedialistPreview_412_SameRetryPolicy`——**测试自身夹具口径错**：给 medialist 端点塞了 view 形态 JSON（无 media_count 字段），ProbeMediaListPreviewAsync 按判据正确返回 null；产品逻辑无缺陷）。补 MediaListJson 夹具后重跑。
+- 最终结果：**Passed! Failed: 0, Passed: 193, Skipped: 0, Total: 193, Duration: 427 ms**——v3.5 的 178 项全绿 + v3.6 新增 15 项全绿：
+  - 蓝队 P2（9 项）：首试浏览器全家桶头逐项断言（UA/Accept/Accept-Language/sec-ch-ua×3/sec-fetch×3/Referer）、412→降级重试一次且第二档无 UA、403 同策略、412×2 静默 null 且无第三次请求、404 不重试、网络异常不重试、cookie 两档都透传、预取消零请求、medialist 同管线同策略。
+  - 红队 P2-A（6 项）：慢响应场景（A 封面晚于 B 元数据到达）IsCurrent(genA)=false 必须拦、HTTP 层取消在途返回 null、预取消零请求、非成功 null、成功返回字节且 UA/Referer 口径与探测一致、空 URL 零请求。
+- GUI 编译门：`dotnet build src/BBDownHelper -p:UseSharedCompilation=false` **0 Warning 0 Error**。
+
+## 发布记录
+
+`dotnet publish` 沿用 v3.2~v3.5 参数（Release / win-x64 / self-contained / PublishSingleFile / EnableCompressionInSingleFile / IncludeNativeLibrariesForSelfExtract）：
+- 产出 → 交付名 **BBDownHelper-v3.6.exe**，45,646,425 字节
+- `file` 判定：`PE32+ executable (GUI) x86-64, for MS Windows`；版本资源实检：UTF-16 `3.6.0` 存在（程序集版本）、` v1.0.3` 窗口标题常量存在（对外发布号未变）
+
+## 生成器 html 未改的原因
+
+`tools/bat下载命令生成器.html` 只调用 GitHub releases API 做启动检查更新（浏览器原生 fetch + 页面自身的 UA），不调用任何 B 站 api 接口，不存在 412 风控场景；封面竞态修复只涉及 GUI 的预览卡链路（WebView 无关）。生成器的 CURRENT_VERSION="1.0.3" 与本版对外发布号一致，无需改动。
+
+## v3.6 未验证范围（如实说明）
+
+- 沙箱无 Windows GUI：封面错配卡在实机上的消除效果（快速连续输入两个 BV 号的实机复现）、占位色块/取消后的视觉表现未实测；代次校验逻辑本体（DebounceGate.IsCurrent + CoverLoader 取消语义）以单测覆盖，窗口侧为代码审查级确认，需实机走查。
+- 412 矩阵基于沙箱数据中心 IP：居民宽带 IP 下首试全家桶头能否直接 200 未验证（两档设计已保证被拦时降级重试兜底）；B 站风控策略随 IP/时间变动，若两端点未来对无 UA 请求也 412，预览卡将退回「静默不出卡」契约（主流程不受影响）。
+- 封面图床（i0/i1.hdslb.com）在 v3.6 未改请求口径（UA+Referer 同 v3.4，实测 200），未对图床做 412 矩阵（蓝队报告仅涉 view 端点）。
+- dotnet test / build / publish 均在 Linux 侧验证；EXE 未在 Windows 实机运行。
