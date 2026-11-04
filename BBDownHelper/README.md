@@ -16,7 +16,11 @@
   - `RecognitionService.cs` 识别门面（短链解析后重分类、多候选消歧、单命中提示可反悔）
   - `CommandBuilder.cs` 参数组装（全部出自 BBDown CommandLineInvoker.cs 源码）
 - `src/BBDownHelper/` —— Avalonia 11 界面（识别卡片/候选选择/选项互斥/进度日志/取消/登录）
-- `tests/BBDownHelper.Core.Tests/` —— 59 个 xUnit 用例（v3.1：v3 的 53 个 + 全角数字 4 个 + b23 锚定 1 个 + -info 标记 2 个，另在 SelectPage_Whitelist 内补 3 条全角断言），Linux 上实跑通过
+- `tests/BBDownHelper.Core.Tests/` —— 66 个 xUnit 用例（v3.2：v3.1 的 59 个 + 控制台编码 7 个），Linux 上实跑通过
+
+## v3.2 变更（日志中文乱码修复 + 程序图标）
+- **日志中文乱码**：BBDown 按系统 ANSI 代码页写 stdout（中文 Windows=GBK/936），v3.1 硬按 UTF-8 解码把中文全变成 U+FFFD（）。新增 Core 纯函数 `ConsoleEncoding.Resolve(ansiCodePage)`（注册 CodePagesEncodingProvider，取系统 ANSI 代码页、取不到回落 GB18030），重定向子进程的 StandardOutputEncoding/StandardErrorEncoding 改用 `ConsoleEncoding.Current`；-ia/扫码登录走可见控制台无重定向不受影响，BiliProbe 走 HTTP 不涉及；日志区只在窗口内（无写文件），解码修正后即为正确文本
+- **程序图标**：csproj 加 `<ApplicationIcon>Assets\BBDownHelper.ico</ApplicationIcon>`（exe 文件图标 + 任务栏 + 桌面快捷方式），MainWindow.axaml 加 `Icon="avares://BBDownHelper/Assets/BBDownHelper.ico"`（窗口标题栏运行时图标）
 
 ## v3.1 变更（质检复核 P2 必修 + 2 条 P3）
 - **P2**：`InputRecognizer.cs` 全部数字正则 `\d` → `[0-9]`（DigitsRegex/AvSearchRegex/BareNumberRegex 为必修三处，AvFullRegex/AvInUrlOrBare/EpSsInPath/NewListsRegex/SpaceMidRegex 同根同修）。根因：.NET `\d` 匹配 Unicode 全角数字，`IsValidSelectPage("８")` 曾返回 True，全角 `-p ８` 可穿透校验原样传给 BBDown
