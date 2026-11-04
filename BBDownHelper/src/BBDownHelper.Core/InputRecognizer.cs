@@ -329,8 +329,9 @@ public static partial class InputRecognizer
     [GeneratedRegex(@"^BV1[A-Za-z0-9]{9}$")]
     public static partial Regex BvFullRegex();
 
+    // 供 BiliProbe.ViewUrlFor 等复用（av 号完整形态）
     [GeneratedRegex(@"^av[0-9]+$", RegexOptions.IgnoreCase)]
-    private static partial Regex AvFullRegex();
+    public static partial Regex AvFullRegex();
 
     [GeneratedRegex(@"^[0-9]+$")]
     public static partial Regex DigitsRegex();
