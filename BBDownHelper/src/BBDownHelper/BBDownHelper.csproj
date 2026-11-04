@@ -8,7 +8,8 @@
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <AssemblyName>BBDownHelper</AssemblyName>
     <RootNamespace>BBDownHelper</RootNamespace>
-    <ApplicationIcon></ApplicationIcon>
+    <!-- v3.2：exe 文件图标 + 任务栏/快捷方式图标 -->
+    <ApplicationIcon>Assets\BBDownHelper.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
