@@ -291,8 +291,10 @@ public partial class MainWindow : Window
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
-            StandardOutputEncoding = System.Text.Encoding.UTF8,
-            StandardErrorEncoding = System.Text.Encoding.UTF8
+            // v3.2：BBDown 按系统 ANSI 代码页写 stdout（中文 Windows=GBK/936），
+            // 硬按 UTF-8 解码会把中文全变成 U+FFFD——改用系统 ANSI 代码页（取不到回落 GB18030）
+            StandardOutputEncoding = ConsoleEncoding.Current,
+            StandardErrorEncoding = ConsoleEncoding.Current
         };
         foreach (var a in cmd.Args) psi.ArgumentList.Add(a);   // ArgumentList 传参，无 shell 注入面
 
