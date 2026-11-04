@@ -195,3 +195,59 @@ BBDown 的 `-ia` 需要用户在控制台里输入序号选画质，隐藏的重
 
 - 图标在 Windows 任务栏、窗口标题栏、桌面快捷方式的实际渲染效果：沙箱无 Windows GUI，无法实测；已验证 ICO 多尺寸资源已正确嵌入 EXE（RT_ICON×7/RT_GROUP_ICON×1）与 Avalonia 资源包，需用户实机确认观感。
 - 乱码修复的端到端效果（真实 BBDown.exe GBK 输出 → 窗口日志显示中文）：沙箱无 Windows + 无 BBDown.exe 运行环境；解码逻辑本体以 GBK 字节样本单测覆盖，系统代码页解析在用户机器上首次运行时生效。
+
+
+
+---
+
+# v3.3（core 子文件夹改造：防误双击 BBDown.exe，2026-11-04）
+
+在 v3.2 源码上修改，未另起项目。环境：Linux 沙箱（2 核），.NET SDK 8.0.404（沙箱重建后经 azureedge 重装，本版实装校验 `dotnet --version` = 8.0.404）。
+
+## 背景（用户决策：方案 B）
+
+实机反馈：顶层 BBDown.exe 与 BBDownHelper.exe 并列，BBDown.exe 无图标、名字更像主程序，零基础用户误双击后黑窗一闪以为程序坏了。拍板方案 B：BBDown.exe / aria2c.exe / ffmpeg.exe 收进 `core\` 子文件夹，顶层只留 BBDownHelper.exe、bat下载命令生成器.html、使用说明.txt。打包结构由组长负责。
+
+## BBDown 侧核实结论（isxulong/BBDown-fixed main 分支源码实读，未改 BBDown）
+
+- `Program.cs:32`：`APP_DIR = Path.GetDirectoryName(Environment.ProcessPath)` —— BBDown 把 BBDown.data / BBDownTV.data / BBDown.refresh_token / BBDown.archives 一律读写在**自身 exe 目录**（core\），布局改造后口径天然一致，不受影响。
+- `BBDownUtil.cs` `FindExecutable`：aria2c/ffmpeg 查找顺序 = `Environment.CurrentDirectory` → `Program.APP_DIR` → `PATH`。exe 放 core\ 后 APP_DIR 命中，**不受子文件夹影响**（我们侧也未依赖 PATH）。
+- `SpaceVideoFetcher.cs:37`：UP 主投稿清单 `{userName}的投稿视频.txt` 用相对路径写在**进程工作目录**——因此 GUI 侧三处 ProcessStartInfo 的 WorkingDirectory 保持顶层（`_baseDir`）不动，清单仍落顶层，与界面指引文案一致。
+
+## 改动清单（文件:行号以 v3.3 源码为准）
+
+1. **新增 `src/BBDownHelper.Core/CoreLayout.cs`**：
+   - `CoreLayout.BbdownPath(baseDir)` / `BbdownDataPath(baseDir)` / `CoreDir(baseDir)`——core\ 路径解析唯一口径；
+   - `CoreLayout.PlanMigration(topFiles, coreFiles)` 纯函数——迁移计划：顶层存在且 core\ 没有的 `BBDown.data`/`BBDown.refresh_token`/`BBDownTV.data` 才搬，core\ 已有的不覆盖，清单外文件不碰；
+   - `CoreDataMigrator.Execute(baseDir)` 执行器——core\ 不存在（残缺安装）时返回 Empty 不动用户数据；单文件迁移失败（占用/权限）记入 Failed/Errors 继续搬下一个，绝不抛出。
+2. **`src/BBDownHelper/MainWindow.axaml.cs`**：
+   - 构造函数（L59-66）：启动时先执行迁移再刷新登录状态，成功/失败均写日志（失败按未登录态继续，不崩）；
+   - L218 `BbdownPath()` → `CoreLayout.BbdownPath(_baseDir)`；
+   - L248 / L425 两处报错文案 → 「没找到 core\BBDown.exe。请使用 v1.0.2 完整压缩包解压，不要只拷贝单个 exe；core 文件夹里应包含 BBDown.exe。」；
+   - L445 `UpdateLoginStatus` / L453 `ReadCookie` → 读 `core\BBDown.data`（BiliProbe cookie 链路即走 ReadCookie，同步）；
+   - L269 / L298 / L433 三处子进程 WorkingDirectory 保持 `_baseDir`（理由见上「BBDown 侧核实」），补注释说明依据。
+3. **全解决方案 grep `BBDown.exe` / `_baseDir` / `BBDown.data`**：除上述各点与文档（README/BUILD）外无第二处硬编码路径；日志区展示的命令文本本来就是 `BBDown ...`（文件名未变），无需改。
+4. 版本标识：界面 Title 为「BBDown 下载助手」、日志无版本号输出——无升级项，如实说明。
+5. README.md 更新使用方法（core\ 布局）并新增 v3.3 变更小节。
+
+## 测试记录（Linux 实跑，dotnet test）
+
+- 命令：`dotnet test tests/BBDownHelper.Core.Tests -p:UseSharedCompilation=false`
+- 第一轮：77 用例 / 1 失败（`Execute_FailureRecorded_NotThrown_OtherFilesStillMoved`——**测试自身的失败注入方式无效**：用「顶层同名目录」模拟占用，但 `EnumerateFiles` 不列目录、根本不进迁移计划；产品逻辑无缺陷）。改为「core\BBDown.data 处同名目录」使 File.Move 真实抛 IOException 后重跑。
+- 最终结果：**77 通过 / 0 失败 / 0 跳过**（`Passed! - Failed: 0, Passed: 77, Skipped: 0, Total: 77, Duration: 429 ms`）
+- 66 个 v3.2 用例全部保持通过；新增 11 个（`CoreLayoutTests`）：
+  - 路径解析 2：`BbdownPath_ResolvesIntoCoreSubfolder` / `BbdownDataPath_ResolvesIntoCoreSubfolder`
+  - 迁移计划纯函数 5：全量三文件 / core 已有不覆盖只搬其余 / 新装无事可做 / 清单外文件不碰 / 大小写不敏感
+  - 执行器 IO 4：临时目录实测「三文件搬入 core、用户文件原样保留」/「core 不存在为 NoOp 且不创建 core」/「core 已有凭据不覆盖顶层旧文件保留」/「单文件失败记录不抛、其余照搬」
+
+## 发布记录
+
+`dotnet publish` 沿用 v3.2 参数（Release / win-x64 / self-contained / PublishSingleFile / EnableCompressionInSingleFile / IncludeNativeLibrariesForSelfExtract）：
+- 产出 `publish_win_single/BBDownHelper.exe` → 交付名 **BBDownHelper-v3.3.exe**，45,632,688 字节
+- `file` 判定：`PE32+ executable (GUI) x86-64, for MS Windows`（单文件自包含）
+- PE 资源实检：RT_ICON ×7 + RT_GROUP_ICON ×1（与 v3.2 相同的 7 尺寸图标组）→ 文件图标保留
+
+## v3.3 未验证范围（如实说明）
+
+- 迁移与 core\ 路径在 Windows 实机的端到端行为（真实从 v1.0.1 目录升级、扫码登录后凭据落 core\BBDown.data、误双击场景消失）：沙箱无 Windows GUI / 无 BBDown.exe，逻辑本体以 11 个单测覆盖（含真实 IO 的临时目录迁移），需组长打包后实机走查。
+- BBDown 侧结论基于 isxulong/BBDown-fixed main 分支源码静态阅读，未实际运行验证。
