@@ -13,28 +13,85 @@ public sealed class BiliApiProbe
 {
     private const string UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+    /// <summary>匿名请求 UA（GUI 侧下载封面图沿用同一口径）。</summary>
+    public const string UserAgent = UA;
+
     /// <summary>GET 返回 body；可注入 mock。参数：url, cookie。</summary>
     public Func<string, string?, Task<string?>>? GetStringOverride { get; set; }
 
     /// <summary>取 302 跳转目标；可注入 mock。参数：url。返回最终 URL。</summary>
     public Func<string, Task<string?>>? GetRedirectOverride { get; set; }
 
-    private async Task<string?> GetStringAsync(string url, string? cookie)
+    /// <summary>
+    /// v3.6 蓝队 P2：底层 HTTP 发送可注入（测试 412/403 降级重试矩阵用）。
+    /// 生产为 null 走真实 HttpClient；注入时请求头已按 ApplyBrowserHeaders 组装完毕，可直接断言。
+    /// </summary>
+    internal Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? SendOverride { get; set; }
+
+    private async Task<string?> GetStringAsync(string url, string? cookie) =>
+        await GetStringAsync(url, cookie, CancellationToken.None);
+
+    /// <summary>
+    /// v3.4 预览卡用：带取消令牌的 GET。取消（防抖窗口内输入又变了）返回 null 静默。
+    /// v3.6 蓝队 P2：api.bilibili.com 的 view 端点对「只有 UA、缺其余浏览器头」的请求返回 412 风控
+    /// （2026-11-04 蓝队实测：带 UA 缺 Accept/sec-ch-ua/sec-fetch-* → 412；同 URL 不带 UA → 200）。
+    /// 修法：首试补齐常见浏览器请求头；仍被 412/403 拦则降级重试一次（极简头不带 UA——蓝队实测可 200）；
+    /// 其余失败（超时/404/网络异常）不重试，维持「静默失败返回 null」总体契约。
+    /// </summary>
+    private async Task<string?> GetStringAsync(string url, string? cookie, CancellationToken ct)
     {
+        if (ct.IsCancellationRequested) return null;
         if (GetStringOverride is not null) return await GetStringOverride(url, cookie);
+        var (body, blocked) = await TryGetAsync(url, cookie, ct, fullHeaders: true);
+        if (body is not null || !blocked || ct.IsCancellationRequested) return body;
+        (body, _) = await TryGetAsync(url, cookie, ct, fullHeaders: false);
+        return body;
+    }
+
+    /// <summary>单次 GET：成功返回 (body,false)；412/403 返回 (null,true) 允许上层降级重试；其余失败 (null,false)。</summary>
+    private async Task<(string? Body, bool Blocked)> TryGetAsync(
+        string url, string? cookie, CancellationToken ct, bool fullHeaders)
+    {
         try
         {
             using var handler = new HttpClientHandler { AllowAutoRedirect = true, UseCookies = false };
             using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) };
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.TryAddWithoutValidation("User-Agent", UA);
-            req.Headers.TryAddWithoutValidation("Referer", "https://www.bilibili.com/");
+            ApplyBrowserHeaders(req, fullHeaders);
             if (!string.IsNullOrEmpty(cookie)) req.Headers.TryAddWithoutValidation("Cookie", cookie);
-            using var resp = await client.SendAsync(req);
-            if (!resp.IsSuccessStatusCode) return null;
-            return await resp.Content.ReadAsStringAsync();
+            using var resp = SendOverride is not null
+                ? await SendOverride(req, ct)
+                : await client.SendAsync(req, ct);
+            int status = (int)resp.StatusCode;
+            if (status is 412 or 403) return (null, true);   // 风控拦截 → 上层降级重试一次
+            if (!resp.IsSuccessStatusCode) return (null, false);
+            return (await resp.Content.ReadAsStringAsync(ct), false);
         }
-        catch { return null; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { return (null, false); }
+        catch { return (null, false); }
+    }
+
+    /// <summary>
+    /// v3.6 蓝队 P2：B 站 API 请求头两档。
+    /// fullHeaders=true：Chrome 全家桶（UA + Accept + Accept-Language + sec-ch-ua* + sec-fetch-*），
+    ///                   对齐浏览器从 www.bilibili.com 页面发 fetch 的真实头形态；
+    /// fullHeaders=false：降级重试档，只留 Referer、不带 UA（蓝队实测同 URL 无 UA 可 200）。
+    /// internal 供测试断言首试/重试两档头部形态。
+    /// </summary>
+    internal static void ApplyBrowserHeaders(HttpRequestMessage req, bool fullHeaders)
+    {
+        req.Headers.TryAddWithoutValidation("Referer", "https://www.bilibili.com/");
+        if (!fullHeaders) return;
+        req.Headers.TryAddWithoutValidation("User-Agent", UA);
+        req.Headers.TryAddWithoutValidation("Accept", "application/json, text/plain, */*");
+        req.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        req.Headers.TryAddWithoutValidation("sec-ch-ua",
+            "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"");
+        req.Headers.TryAddWithoutValidation("sec-ch-ua-mobile", "?0");
+        req.Headers.TryAddWithoutValidation("sec-ch-ua-platform", "\"Windows\"");
+        req.Headers.TryAddWithoutValidation("sec-fetch-dest", "empty");
+        req.Headers.TryAddWithoutValidation("sec-fetch-mode", "cors");
+        req.Headers.TryAddWithoutValidation("sec-fetch-site", "same-site");
     }
 
     /// <summary>b23.tv 短链：跟随 302 拿最终 URL。失败返回 null。</summary>
@@ -148,6 +205,114 @@ public sealed class BiliApiProbe
             catch { }
         }
         return $"UP主ID: {mid}";
+    }
+
+    /// <summary>
+    /// v3.4 预览卡：单视频预览（支持 BV 号与 av 号——旧探测只支持 view?aid=，BV 走 view?bvid=）。
+    /// 网络失败/取消返回 null（静默不显示）；接口明确 code != 0 返回 NotFound=true（温和提示）。
+    /// </summary>
+    public async Task<VideoPreview?> ProbeViewPreviewAsync(string finalInput, string? cookie, CancellationToken ct)
+    {
+        string? url = ViewUrlFor(finalInput);
+        if (url is null) return null;
+        string? json = await GetStringAsync(url, cookie, ct);
+        return ParseViewPreview(json);
+    }
+
+    /// <summary>识别结果的最终输入（BV 号 / av 号）→ view 接口 URL；不是单视频形态返回 null。</summary>
+    public static string? ViewUrlFor(string finalInput)
+    {
+        if (string.IsNullOrEmpty(finalInput)) return null;
+        finalInput = finalInput.Trim();
+        if (InputRecognizer.BvFullRegex().IsMatch(finalInput))
+            return $"https://api.bilibili.com/x/web-interface/view?bvid={finalInput}";
+        if (InputRecognizer.AvFullRegex().IsMatch(finalInput)
+            && long.TryParse(finalInput[2..], out long aid))
+            return $"https://api.bilibili.com/x/web-interface/view?aid={aid}";
+        return null;
+    }
+
+    /// <summary>
+    /// 解析 view 响应为预览数据。null/JSON 损坏返回 null（静默）；code != 0 返回 NotFound。
+    /// 2026-11-04 实测口径：data.pic 为 http:// 前缀（规范成 https）、data.pages 数组长度=分P数。
+    /// </summary>
+    internal static VideoPreview? ParseViewPreview(string? json)
+    {
+        if (json is null) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("code", out var code) || code.ValueKind != JsonValueKind.Number)
+                return null;
+            if (code.GetInt32() != 0)
+                return new VideoPreview { NotFound = true };   // -400 请求错误 / -403 权限不足：可能不存在或已删除
+            if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+                return null;
+            string title = data.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+            string pic = data.TryGetProperty("pic", out var p) ? p.GetString() ?? "" : "";
+            int pages = data.TryGetProperty("pages", out var ps) && ps.ValueKind == JsonValueKind.Array
+                ? ps.GetArrayLength() : 0;
+            string upName = "";
+            if (data.TryGetProperty("owner", out var owner) && owner.ValueKind == JsonValueKind.Object
+                && owner.TryGetProperty("name", out var n))
+                upName = n.GetString() ?? "";
+            return new VideoPreview
+            {
+                Kind = InputKind.SingleVideo,
+                Title = title,
+                CoverUrl = NormalizeCoverUrl(pic),
+                PageCount = pages,
+                UpName = upName
+            };
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// v3.4 预览卡：合集/系列预览（medialist 接口）。
+    /// 2026-11-04 实测口径：data.cover 可能是空串（该系列没有封面）、data.upper.name 为创建者昵称。
+    /// 失败一律返回 null 静默（合集/系列不存在时该接口 data=null，不作文案提示）。
+    /// </summary>
+    public async Task<VideoPreview?> ProbeMediaListPreviewAsync(long bizId, int type, string? cookie, CancellationToken ct)
+    {
+        string url = $"https://api.bilibili.com/x/v1/medialist/info?type={type}&biz_id={bizId}";
+        string? json = await GetStringAsync(url, cookie, ct);
+        if (json is null) return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+                return null;
+            int count = data.TryGetProperty("media_count", out var mc) && mc.ValueKind == JsonValueKind.Number
+                ? mc.GetInt32() : 0;
+            if (count <= 0) return null;
+            string title = data.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+            string cover = data.TryGetProperty("cover", out var c) ? NormalizeCoverUrl(c.GetString() ?? "") : "";
+            string upName = "";
+            if (data.TryGetProperty("upper", out var up) && up.ValueKind == JsonValueKind.Object
+                && up.TryGetProperty("name", out var un))
+                upName = un.GetString() ?? "";
+            return new VideoPreview
+            {
+                Kind = type == 5 ? InputKind.Series : InputKind.Collection,
+                Title = title,
+                CoverUrl = cover,
+                MediaCount = count,
+                UpName = upName
+            };
+        }
+        catch { return null; }
+    }
+
+    /// <summary>封面 URL 规范：B 站 view 接口的 pic 返回 http:// 前缀，统一升 https。</summary>
+    internal static string NormalizeCoverUrl(string pic)
+    {
+        if (string.IsNullOrEmpty(pic)) return "";
+        return pic.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            ? "https://" + pic["http://".Length..]
+            : pic;
     }
 
     /// <summary>
