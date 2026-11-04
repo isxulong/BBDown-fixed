@@ -172,6 +172,25 @@ h1 {
 .notice p { margin: 0; }
 .notice strong { color: var(--ink); font-weight: 700; }
 
+/* ---------- update banner（检查更新提示，默认隐藏） ---------- */
+.update-banner {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 10px 16px;
+  background: var(--amber-soft);
+  border: 1px solid var(--amber);
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: var(--amber);
+  font-weight: 600;
+}
+
+.update-banner.show { display: flex; }
+.update-banner a { color: var(--accent); font-weight: 700; }
+
+
 .notice-icon {
   width: 19px;
   height: 19px;
@@ -1194,12 +1213,18 @@ summary:focus-visible {
     </div>
     <div class="masthead-side">
       <p class="meta-line"><span class="pulse" aria-hidden="true"></span>纯静态页面</p>
-      <p class="meta-line">不上传 · 不联网 · 可离线</p>
+      <p class="meta-line">不上传 · 可离线 · 启动时检查一次更新</p>
       <p class="meta-line meta-dim">适合 BBDown 1.6.x</p>
     </div>
   </header>
 
   <div class="ruler" aria-hidden="true"></div>
+
+  <!-- 检查更新提示条（默认隐藏；页面加载时查 GitHub latest release，失败静默） -->
+  <div class="update-banner" id="updateBanner">
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 3l10 18H2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 10v4.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 17.3v.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+    <span>发现新版本 <span id="updateVer"></span> → <a id="updateLink" href="#" target="_blank" rel="noopener">点此查看下载</a></span>
+  </div>
 
   <div class="notice" role="note">
     <svg class="notice-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9.25" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M12 7.6v.2M12 11v5.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
@@ -2133,7 +2158,8 @@ summary:focus-visible {
     line([{ t: '  move /y "*的投稿视频.txt" "旧清单" >nul 2>nul', c: "meta" }]);
     line([{ t: ")", c: "meta" }]);
     line([]);
-    line([{ t: o.flat ? "BBDown.exe" : "core\\BBDown.exe", c: "bin" }, { t: tgt, c: "target" }]);
+    line([{ t: o.flat ? "BBDown.exe" : "core\\BBDown.exe", c: "bin",
+           bt: o.flat ? '"%~dp0BBDown.exe"' : '"%~dp0core\\BBDown.exe"' }, { t: tgt, c: "target" }]);
     line([]);
     line([{ t: ":: 只从「*的投稿视频.txt」里取最新的一份", c: "comment" }]);
     line([{ t: 'set "LIST="', c: "meta" }]);
@@ -2150,7 +2176,8 @@ summary:focus-visible {
       line([]);
       line([{ t: ":: 第 2 步：按清单逐个下载", c: "comment" }]);
       line([{ t: 'for /f "usebackq delims=" %%a in ("%LIST%") do (', c: "meta" }]);
-      line([{ t: o.flat ? "  BBDown.exe" : "  core\\BBDown.exe", c: "bin" }, { t: '"%%a"', c: "target" }].concat(second));
+      line([{ t: o.flat ? "  BBDown.exe" : "  core\\BBDown.exe", c: "bin",
+           bt: o.flat ? '  "%~dp0BBDown.exe"' : '  "%~dp0core\\BBDown.exe"' }, { t: '"%%a"', c: "target" }].concat(second));
       if (o.delay !== "" && o.delay !== null) {
         line([{ t: "  timeout /t " + o.delay + " /nobreak >nul", c: "meta" }]);
       }
@@ -2172,7 +2199,7 @@ summary:focus-visible {
 
     var text = lines
       .map(function (lineSegs) {
-        return lineSegs.map(function (seg) { return seg.t; }).join(" ");
+        return lineSegs.map(function (seg) { return seg.bt || seg.t; }).join(" ");
       })
       .join("\r\n") + "\r\n";
 
@@ -2191,7 +2218,8 @@ summary:focus-visible {
     if (rec.kind === "up") return buildUpScript(rec, o);
 
     var mode = modeOf(o);
-    var segs = [{ t: o.flat ? "BBDown" : "core\\BBDown.exe", c: "bin" }];
+    var segs = [{ t: o.flat ? "BBDown" : "core\\BBDown.exe", c: "bin",
+      bt: o.flat ? '"%~dp0BBDown.exe"' : '"%~dp0core\\BBDown.exe"' }];
     var flags = [];
     var partsValue = cleanParts(o.parts || "").value;
     var workDirValue = cleanWorkDir(o.workDir || "").value;
@@ -2262,6 +2290,7 @@ summary:focus-visible {
     return {
       segs: segs,
       text: segs.map(function (s) { return s.t; }).join(" "),
+      bat: batContent(segs.map(function (s) { return s.bt || s.t; }).join(" ")),
       flags: flags,
       isScript: false,
       emptyFlags: ""
@@ -2727,6 +2756,7 @@ summary:focus-visible {
       bind();
       syncLayoutNotes();
       renderRecognition();
+      checkUpdate();   // 加载时查一次更新（失败静默，不影响页面任何功能）
     }
 
     if (document.readyState === "loading") {
@@ -2734,6 +2764,53 @@ summary:focus-visible {
     } else {
       init();
     }
+  }
+
+  /* ---------- 检查更新（纯增量：任何失败静默） ---------- */
+  /* 本页面对应的套件版本，单一来源；发版时改这一处 */
+  var CURRENT_VERSION = "1.0.3";
+  var LATEST_RELEASE_API = "https://api.github.com/repos/isxulong/BBDown-fixed/releases/latest";
+
+  function parseVer(tag) {
+    if (typeof tag !== "string") return null;
+    var t = tag.trim();
+    if (t.charAt(0) === "v" || t.charAt(0) === "V") t = t.slice(1);
+    var dash = t.indexOf("-");
+    if (dash >= 0) t = t.slice(0, dash);
+    var parts = t.split(".");
+    if (parts.length < 1 || parts.length > 3) return null;
+    var nums = [0, 0, 0];
+    for (var i = 0; i < parts.length; i++) {
+      if (!/^\d+$/.test(parts[i])) return null;
+      nums[i] = parseInt(parts[i], 10);
+    }
+    return nums;
+  }
+
+  function isNewer(latest, current) {
+    var l = parseVer(latest);
+    var c = parseVer(current);
+    if (!l || !c) return false;   // 版本号解析不了：宁可不提示
+    for (var i = 0; i < 3; i++) {
+      if (l[i] !== c[i]) return l[i] > c[i];
+    }
+    return false;                 // 同版本不提示
+  }
+
+  function checkUpdate() {
+    try {
+      fetch(LATEST_RELEASE_API, { headers: { "Accept": "application/vnd.github+json" } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+          if (!data || typeof data.tag_name !== "string" || typeof data.html_url !== "string") return;
+          if (!isNewer(data.tag_name, CURRENT_VERSION)) return;
+          var banner = document.getElementById("updateBanner");
+          document.getElementById("updateVer").textContent = data.tag_name;
+          document.getElementById("updateLink").href = data.html_url;
+          banner.className = banner.className.replace(/\bupdate-banner\b/, "update-banner show");
+        })
+        .catch(function () { /* 网络失败/超时/被墙：静默 */ });
+    } catch (e) { /* 浏览器不支持 fetch 等：静默 */ }
   }
 
   /* 便于在控制台或测试中复用 */
@@ -2744,7 +2821,10 @@ summary:focus-visible {
       buildCommand: buildCommand,
       batContent: batContent,
       cleanParts: cleanParts,
-      cleanWorkDir: cleanWorkDir
+      cleanWorkDir: cleanWorkDir,
+      currentVersion: CURRENT_VERSION,
+      parseVer: parseVer,
+      isNewer: isNewer
     };
   }
 })();
