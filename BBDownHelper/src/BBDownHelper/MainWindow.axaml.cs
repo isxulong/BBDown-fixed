@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,6 +20,9 @@ public partial class MainWindow : Window
     private readonly string _baseDir = AppContext.BaseDirectory;
     private readonly RecognitionService _recognizer = new();
     private readonly GenerationGate _recogGate = new();   // 红蓝共识 P2：识别竞态代际闸
+    private readonly PreviewService _previewService = new();   // v3.4：预览卡取数
+    private readonly DebounceGate _previewDebounce = new();   // v3.4：预览防抖闸（500ms + 旧请求取消）
+    private readonly CoverLoader _coverLoader = new();   // v3.6 红队 P2-A：封面下载（代次取消贯穿 HTTP 层）
     private RecognitionResult? _current;
     private Process? _proc;
     private CancellationTokenSource? _debounce;
@@ -27,10 +31,15 @@ public partial class MainWindow : Window
     private bool _infoAutoChecked;  // 红 P3-1：-info 是否由我们自动勾上（换输入时只复位自动勾的）
     private bool _infoSettingProgrammatically;  // v3.1 P3：区分程序化设置与用户手动改动 InfoBox
     private bool _forceClosing;     // 蓝 P2-3：确认关窗后跳过 Exited 的 UI 更新
+    private readonly UpdateChecker _updateChecker = new();   // v3.5：检查更新
+    private string? _updateUrl;     // v3.5：新版本发布页地址（提示条按钮用）
 
     public MainWindow()
     {
         InitializeComponent();
+        // v3.5：窗口标题与角落版本号都从 AppVersion 取（版本号单一来源，XAML 不写死）
+        Title = AppVersion.WindowTitle;
+        VersionCorner.Text = AppVersion.CornerLabel;
         DirText.Text = _baseDir.TrimEnd(Path.DirectorySeparatorChar);
         InputBox.PropertyChanged += (_, e) =>
         {
@@ -64,6 +73,40 @@ public partial class MainWindow : Window
         foreach (var err in migration.Errors)
             AppendLog("老文件移入 core 失败，已跳过（" + err + "）。登录状态可能显示为未登录。");
         UpdateLoginStatus();
+        // v3.5：启动后异步检查一次更新（24h 缓存在 core\.update-check.json）。
+        // 纯增量：任何失败（网络/超时/被墙/缓存读写失败）一律静默，不显示、不阻塞启动。
+        UpdateBannerBtn.Click += OnUpdateBannerClick;
+        _ = CheckForUpdateAsync();
+    }
+
+    // ---------- v3.5 检查更新（纯增量：任何异常不得影响启动与主流程） ----------
+
+    private async Task CheckForUpdateAsync()
+    {
+        try
+        {
+            var info = await _updateChecker.CheckAsync(
+                AppVersion.ReleaseTag, CoreLayout.UpdateCheckCachePath(_baseDir));
+            if (info is null) return;   // 无新版本 / 失败静默
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                _updateUrl = info.ReleaseUrl;
+                UpdateBannerText.Text = $"发现新版本 {info.LatestTag} →";
+                UpdateBanner.IsVisible = true;
+            });
+        }
+        catch { /* 检查更新绝不拖垮主流程 */ }
+    }
+
+    private void OnUpdateBannerClick(object? sender, RoutedEventArgs e)
+    {
+        // 点「点此查看下载」→ 打开发布页；打不开（无浏览器等）静默忽略
+        if (string.IsNullOrEmpty(_updateUrl)) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo(_updateUrl) { UseShellExecute = true });
+        }
+        catch { /* 打不开就算了，不报错 */ }
     }
 
     // ---------- 识别 ----------
@@ -87,12 +130,18 @@ public partial class MainWindow : Window
         // 红蓝共识 P2：代际号防竞态——识别期间用户又改了输入时，慢返回的旧结果直接丢弃
         int gen = _recogGate.Next();
         CandidateCard.IsVisible = false;
-        if (string.IsNullOrWhiteSpace(text)) { ResultCard.IsVisible = false; _current = null; return; }
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            ResultCard.IsVisible = false; _current = null;
+            _ = UpdatePreviewAsync(null);   // v3.4：清空输入时一并撤下预览卡
+            return;
+        }
         StatusText.Text = "正在识别…";
         var r = await _recognizer.RecognizeAsync(text, ReadCookie());
         if (!_recogGate.IsCurrent(gen)) return;   // 过期结果不得覆盖新卡片
         ShowResult(r);
         StatusText.Text = "就绪";
+        _ = UpdatePreviewAsync(r);   // v3.4：识别完成后自动取预览（纯增强，失败静默）
     }
 
     private void ShowResult(RecognitionResult r)
@@ -156,7 +205,85 @@ public partial class MainWindow : Window
         CandidateCard.IsVisible = false;
         ShowResult(RecognitionService.FromCandidate(chosen));
         StatusText.Text = "就绪";
+        _ = UpdatePreviewAsync(_current);   // v3.4：裸数字候选选定后才出预览卡
         await Task.CompletedTask;
+    }
+
+    // ---------- v3.4 预览卡（纯增强：任何异常都不得影响识别→解析→下载主流程） ----------
+
+    /// <summary>
+    /// 识别完成后自动取预览。防抖约 500ms；输入再变化时 DebounceGate.Submit 取消旧等待与在途请求，
+    /// 过期结果（IsCurrent=false）一律不上屏。网络失败返回 null → 静默不显示。
+    /// </summary>
+    private async Task UpdatePreviewAsync(RecognitionResult? r)
+    {
+        int gen = _previewDebounce.Submit();   // 取消旧一轮（等待 + 在途请求）
+        HidePreview();
+        if (r is null) return;
+        try
+        {
+            if (!await _previewDebounce.ElapsedAsync(gen)) return;   // 防抖窗口内输入又变了
+            var pv = await _previewService.GetPreviewAsync(r, ReadCookie(), _previewDebounce.Token);
+            if (!_previewDebounce.IsCurrent(gen)) return;            // 过期结果不得上屏
+            ShowPreview(pv, gen);
+        }
+        catch (OperationCanceledException) { }
+        catch { /* 预览是纯增强：吞掉一切异常 */ }
+    }
+
+    private void HidePreview()
+    {
+        PreviewCard.IsVisible = false;
+        PreviewNotFoundText.IsVisible = false;
+        CoverImage.Source = null;
+        CoverPlaceholder.IsVisible = true;
+    }
+
+    private void ShowPreview(VideoPreview? pv, int gen)
+    {
+        if (pv is null) return;   // 网络失败/超时/无预览的输入：静默不显示
+        if (pv.NotFound)
+        {
+            // view 接口明确 code != 0：视频可能不存在或已删除——温和提示，不报错不阻塞
+            PreviewNotFoundText.IsVisible = true;
+            return;
+        }
+        PreviewKindText.Text = pv.Kind switch
+        {
+            InputKind.Collection => $"合集 · 共 {pv.MediaCount} 个视频",
+            InputKind.Series => $"系列 · 共 {pv.MediaCount} 个视频",
+            _ => pv.PageCount > 1 ? $"视频 · 共 {pv.PageCount} 个分P" : "视频"
+        };
+        PreviewTitleText.Text = pv.Title;
+        PreviewUpText.IsVisible = !string.IsNullOrEmpty(pv.UpName);
+        PreviewUpText.Text = "UP 主：" + pv.UpName;
+        PreviewCard.IsVisible = true;
+        _ = LoadCoverAsync(pv.CoverUrl, gen);
+    }
+
+    /// <summary>
+    /// 封面下载：B 站图床 https 直链 → Bitmap；失败/无封面显示占位色块。
+    /// v3.6 红队 P2-A：与预览元数据同一代次源（DebounceGate）——在途下载随新输入取消（Token），
+    /// 慢响应回来先验 IsCurrent(gen) 再上屏，杜绝「B 的标题 + A 的封面」错配卡。
+    /// </summary>
+    private async Task LoadCoverAsync(string url, int gen)
+    {
+        CoverImage.Source = null;
+        CoverPlaceholder.IsVisible = true;
+        if (string.IsNullOrEmpty(url)) return;   // 接口没给封面字段：保持占位色块
+        try
+        {
+            var bytes = await _coverLoader.GetCoverBytesAsync(url, _previewDebounce.Token);
+            if (!_previewDebounce.IsCurrent(gen)) return;   // 过期封面不得覆盖新卡片
+            if (bytes is null) return;                      // 下载失败/取消：保持占位色块
+            using var ms = new MemoryStream(bytes);
+            var bmp = new Avalonia.Media.Imaging.Bitmap(ms);   // 解码失败抛异常 → catch → 占位
+            if (!_previewDebounce.IsCurrent(gen)) return;   // 解码期间输入又变了：再验一次
+            CoverImage.Source = bmp;
+            CoverPlaceholder.IsVisible = false;
+        }
+        catch (OperationCanceledException) { }
+        catch { /* 加载失败保持占位色块 */ }
     }
 
     // ---------- 选集校验（红 P2-2：非法输入实时标红 + 禁用开始，禁止静默丢弃） ----------
