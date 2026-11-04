@@ -1190,7 +1190,7 @@ summary:focus-visible {
     <div class="masthead-main">
       <div class="kicker"><span class="kicker-rule" aria-hidden="true"></span>BBDown · 命令行拼装台</div>
       <h1>BBDown 命令生成器</h1>
-      <p class="lede">粘贴 B 站的分享文字、链接或 BV 号，勾选要下载的内容，页面会替你把 BBDown 命令拼好——复制走，或者存成 .bat 放进程序文件夹。</p>
+      <p class="lede">粘贴 B 站的分享文字、链接或 BV 号，勾选要下载的内容，页面会替你把 BBDown 命令拼好——复制走，或者存成 .bat 放进解压包的根目录（其他 .bat 所在的文件夹）。</p>
     </div>
     <div class="masthead-side">
       <p class="meta-line"><span class="pulse" aria-hidden="true"></span>纯静态页面</p>
@@ -1470,13 +1470,30 @@ summary:focus-visible {
           <div class="opt-group">
             <div class="opt-head">
               <h3>保存位置</h3>
-              <span class="hint">不填就存到 BBDown.exe 旁边</span>
+              <span class="hint">不填就存到 .bat 所在文件夹</span>
             </div>
             <div class="field">
               <label class="field-label" for="workDir">下载到哪个文件夹</label>
               <input class="input input-mono" id="workDir" type="text" placeholder="D:\B站视频" spellcheck="false" autocomplete="off">
               <p class="field-hint">网页没法调出系统的「选择文件夹」窗口，把路径填进来就行。文件夹不存在时，程序会自动创建。</p>
               <p class="field-error" id="workDirError" hidden></p>
+            </div>
+          </div>
+
+          <div class="opt-group">
+            <div class="opt-head">
+              <h3>程序位置</h3>
+              <span class="hint">决定命令开头怎么写 BBDown.exe</span>
+            </div>
+            <div class="switch-row switch-row-tight">
+              <label class="switch">
+                <input type="checkbox" id="flatLayout">
+                <span class="mark mark-box" aria-hidden="true"></span>
+                <span class="opt-body">
+                  <span class="opt-label">BBDown.exe 就在当前文件夹（官方原版布局）</span>
+                  <span class="opt-desc">默认不勾：BBDown.exe 在 core 子文件夹（本套件 v1.0.2 起的压缩包布局），命令以 core\BBDown.exe 开头。勾上：exe 和 .bat 在同一文件夹（官方 BBDown 原版布局），命令以 BBDown 开头。</span>
+                </span>
+              </label>
             </div>
           </div>
 
@@ -1589,10 +1606,10 @@ summary:focus-visible {
         </div>
 
         <div class="output-section output-notes">
-          <p>把命令粘到 BBDown.exe 所在文件夹的命令行里运行；或直接下载 .bat 放进那个文件夹，双击即可。</p>
-          <p>1080P 高码率、4K 等画质，需要先用 <code>BBDown login</code> 扫码登录大会员账号。</p>
+          <p id="runNote">把命令粘到包根目录（.bat 文件所在文件夹）的命令行里运行，视频也会下载到这里；或直接下载 .bat 放进包根目录，双击即可。</p>
+          <p>1080P 高码率、4K 等画质，需要先用 <code id="loginCmd">core\BBDown.exe login</code> 扫码登录大会员账号。</p>
           <p id="listNote" hidden>列表类建议保留「间歇」和「断点跳过」，几百个视频的列表下上好几天也正常。</p>
-          <p id="upNote" hidden>UP 主主页是两步脚本：先让 BBDown 生成「UP昵称的投稿视频.txt」，脚本只从这类文件里取最新的一份逐条下载。开跑前旧的同名单会挪进「旧清单」子目录，不删任何文件，也不会碰你自己放的 urls.txt 等其他 .txt。清单上千条时，跑几小时到一天都正常，中途关掉可以下次接着跑。面板里是 .bat 的完整内容，复制后请先存成 .bat 文件再双击，不要直接粘进命令行。</p>
+          <p id="upNote" hidden>UP 主主页是两步脚本：先让 BBDown 生成「UP昵称的投稿视频.txt」，脚本只从这类文件里取最新的一份逐条下载。开跑前旧的同名单会挪进「旧清单」子目录，不删任何文件，也不会碰你自己放的 urls.txt 等其他 .txt。清单上千条时，跑几小时到一天都正常，中途关掉可以下次接着跑。面板里是 .bat 的完整内容，复制后请先存成 .bat 文件、和其他 .bat 放在同一文件夹（默认是解压包的根目录）再双击，不要直接粘进命令行。</p>
         </div>
       </section>
 
@@ -1601,7 +1618,7 @@ summary:focus-visible {
   </main>
 
   <footer class="footer">
-    <p>BBDown 是第三方开源下载工具，请自行获取 BBDown.exe 后与生成的 .bat 放在同一文件夹。本页面不收集、不传输任何内容，关掉网络也能用。</p>
+    <p>BBDown 是第三方开源下载工具。本套件压缩包（v1.0.2 起）自带 BBDown.exe，位于 core 文件夹，页面默认按这个布局生成命令；如果你用的是自行获取的官方 BBDown.exe（exe 与 .bat 在同一文件夹），请勾选上面的「BBDown.exe 就在当前文件夹」。本页面不收集、不传输任何内容，关掉网络也能用。</p>
   </footer>
 
 </div>
@@ -2116,7 +2133,7 @@ summary:focus-visible {
     line([{ t: '  move /y "*的投稿视频.txt" "旧清单" >nul 2>nul', c: "meta" }]);
     line([{ t: ")", c: "meta" }]);
     line([]);
-    line([{ t: "BBDown.exe", c: "bin" }, { t: tgt, c: "target" }]);
+    line([{ t: o.flat ? "BBDown.exe" : "core\\BBDown.exe", c: "bin" }, { t: tgt, c: "target" }]);
     line([]);
     line([{ t: ":: 只从「*的投稿视频.txt」里取最新的一份", c: "comment" }]);
     line([{ t: 'set "LIST="', c: "meta" }]);
@@ -2133,7 +2150,7 @@ summary:focus-visible {
       line([]);
       line([{ t: ":: 第 2 步：按清单逐个下载", c: "comment" }]);
       line([{ t: 'for /f "usebackq delims=" %%a in ("%LIST%") do (', c: "meta" }]);
-      line([{ t: "  BBDown.exe", c: "bin" }, { t: '"%%a"', c: "target" }].concat(second));
+      line([{ t: o.flat ? "  BBDown.exe" : "  core\\BBDown.exe", c: "bin" }, { t: '"%%a"', c: "target" }].concat(second));
       if (o.delay !== "" && o.delay !== null) {
         line([{ t: "  timeout /t " + o.delay + " /nobreak >nul", c: "meta" }]);
       }
@@ -2174,7 +2191,7 @@ summary:focus-visible {
     if (rec.kind === "up") return buildUpScript(rec, o);
 
     var mode = modeOf(o);
-    var segs = [{ t: "BBDown", c: "bin" }];
+    var segs = [{ t: o.flat ? "BBDown" : "core\\BBDown.exe", c: "bin" }];
     var flags = [];
     var partsValue = cleanParts(o.parts || "").value;
     var workDirValue = cleanWorkDir(o.workDir || "").value;
@@ -2274,7 +2291,7 @@ summary:focus-visible {
       "delay", "archive", "info", "mt", "listGroup", "cmd",
       "batName", "copyBtn", "copyLabel", "batBtn", "flagList", "lockNote",
       "listNote", "upNote", "delayHint", "clearBtn",
-      "infoCard", "infoNote", "optionsHint"
+      "infoCard", "infoNote", "optionsHint", "flatLayout", "runNote", "loginCmd"
     ];
 
     function cacheEls() {
@@ -2304,6 +2321,7 @@ summary:focus-visible {
         delay: delay,
         archive: el.archive.checked,
         info: el.info.checked,
+        flat: !!(el.flatLayout && el.flatLayout.checked),
         mode: ""
       };
     }
@@ -2634,7 +2652,7 @@ summary:focus-visible {
     function bind() {
       el.source.addEventListener("input", renderRecognition);
 
-      document.querySelectorAll('input[name="quality"], input[name="encoding"], input[name="content"], input[name="danmaku"], #mt, #info, #archive')
+      document.querySelectorAll('input[name="quality"], input[name="encoding"], input[name="content"], input[name="danmaku"], #mt, #info, #archive, #flatLayout')
         .forEach(function (node) {
           node.addEventListener("change", function () {
             /* 「只要弹幕」和「只下音频 / 封面 / 字幕」互斥，切换时先把对方复位 */
@@ -2648,6 +2666,8 @@ summary:focus-visible {
             syncDisabled();
           });
         });
+
+      if (el.flatLayout) el.flatLayout.addEventListener("change", syncLayoutNotes);
 
       el.parts.addEventListener("input", syncDisabled);
       el.workDir.addEventListener("input", syncDisabled);
@@ -2690,9 +2710,22 @@ summary:focus-visible {
       el.batBtn.addEventListener("click", downloadBat);
     }
 
+    function syncLayoutNotes() {
+      var flat = !!(el.flatLayout && el.flatLayout.checked);
+      if (el.runNote) {
+        el.runNote.textContent = flat
+          ? "把命令粘到 BBDown.exe 所在文件夹的命令行里运行；或直接下载 .bat 放进那个文件夹，双击即可。"
+          : "把命令粘到包根目录（.bat 文件所在文件夹）的命令行里运行，视频也会下载到这里；或直接下载 .bat 放进包根目录，双击即可。";
+      }
+      if (el.loginCmd) {
+        el.loginCmd.textContent = flat ? "BBDown login" : "core\\BBDown.exe login";
+      }
+    }
+
     function init() {
       cacheEls();
       bind();
+      syncLayoutNotes();
       renderRecognition();
     }
 
