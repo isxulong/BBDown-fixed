@@ -62,10 +62,23 @@ public class CoreLayoutTests
     public void Plan_IgnoresFilesOutsideKnownList()
     {
         // 清单外的文件（用户下载、UP 投稿清单 txt 等）一律不碰
+        // v3.4（质检 P3）：BBDown.archives 已进白名单，从「清单外」例子里移除
         var plan = CoreLayout.PlanMigration(
-            new[] { "某UP的投稿视频.txt", "video.mp4", "BBDown.archives" },
+            new[] { "某UP的投稿视频.txt", "video.mp4", "BBDown.log" },
             Array.Empty<string>());
         Assert.Empty(plan);
+    }
+
+    [Fact]
+    public void Plan_ArchivesFile_IsKnownAndPlanned()
+    {
+        // v3.4（质检 P3）：BBDown.archives（「已下载跳过」记录，BBDown 写在 APP_DIR）
+        // 必须与其他数据文件一样进迁移清单
+        Assert.Contains("BBDown.archives", CoreLayout.LegacyDataFiles);
+        var plan = CoreLayout.PlanMigration(
+            new[] { "BBDown.archives", "BBDownHelper.exe" },
+            new[] { "BBDown.exe" });
+        Assert.Equal(new[] { "BBDown.archives" }, plan);
     }
 
     [Fact]
@@ -170,6 +183,66 @@ public class CoreLayoutTests
             Assert.Equal(new[] { "BBDown.refresh_token" }, r.Moved);
             Assert.True(File.Exists(Path.Combine(top, "BBDown.data")));   // 原样保留
             Assert.True(File.Exists(Path.Combine(top, "core", "BBDown.refresh_token")));
+        }
+        finally { Directory.Delete(top, true); }
+    }
+
+    // ---------- v3.4（质检 P3）：目录列举异常兜底 ----------
+
+    [Fact]
+    public void Execute_ListerThrows_NoCrash_EmptyPlan()
+    {
+        // EnumerateFiles 抛异常（权限/句柄失效）：不得崩、不得抛——返回空计划
+        string top = TempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(top, "BBDown.data"), "cookie");
+
+            var r = CoreDataMigrator.Execute(top, _ => throw new IOException("句柄失效"));
+
+            Assert.Empty(r.Moved);
+            Assert.Empty(r.Failed);
+            Assert.True(File.Exists(Path.Combine(top, "BBDown.data")));   // 原地未动
+        }
+        finally { Directory.Delete(top, true); }
+    }
+
+    [Fact]
+    public void Execute_CoreListerThrows_TreatedAsEmpty_MigratesAll()
+    {
+        // core\ 列举失败 = 视 core 为空：顶层数据文件全量搬入（core\ 本身存在，File.Move 能落）
+        string top = TempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(top, "BBDown.data"), "cookie");
+            File.WriteAllText(Path.Combine(top, "BBDown.archives"), "a1\na2\n");
+
+            var r = CoreDataMigrator.Execute(top, d =>
+                d.EndsWith("core", StringComparison.OrdinalIgnoreCase)
+                    ? throw new IOException("core 句柄失效")
+                    : Directory.EnumerateFiles(d));
+
+            Assert.Equal(new[] { "BBDown.data", "BBDown.archives" }, r.Moved);
+            Assert.True(File.Exists(Path.Combine(top, "core", "BBDown.archives")));
+        }
+        finally { Directory.Delete(top, true); }
+    }
+
+    [Fact]
+    public void Execute_MovesArchivesIntoCore()
+    {
+        // BBDown.archives 与其他数据文件一样：顶层有、core 没有时搬入 core\
+        string top = TempDir();
+        try
+        {
+            File.WriteAllText(Path.Combine(top, "core", "BBDown.exe"), "bin");
+            File.WriteAllText(Path.Combine(top, "BBDown.archives"), "BV1xx411c7mD\n");
+
+            var r = CoreDataMigrator.Execute(top);
+
+            Assert.Equal(new[] { "BBDown.archives" }, r.Moved);
+            Assert.True(File.Exists(Path.Combine(top, "core", "BBDown.archives")));
+            Assert.False(File.Exists(Path.Combine(top, "BBDown.archives")));
         }
         finally { Directory.Delete(top, true); }
     }
