@@ -148,3 +148,50 @@ BBDown 的 `-ia` 需要用户在控制台里输入序号选画质，隐藏的重
 - GUI 行为（置灰视觉效果、说明行显隐、确认弹窗、日志就地说明、结束后状态文案）在 Linux 沙箱无法启动 Windows 窗口实测；置灰规则本体已抽纯逻辑并有 6 个单测覆盖，窗口侧为代码审查级确认，需在 Windows 机器人工走查。
 - BBDown 对 UP 主主页的实际退出码未在本沙箱验证（无 BBDown.exe + 无网络环境）；v3 实现对 UpSpace 任务不看退出码，因此无论 BBDown 以何码退出都不会标失败。
 - 扫码登录、-ia 可见控制台路径未实跑（同 v2）。
+
+
+---
+
+# v3.2（日志中文乱码修复 + 程序图标，2026-11-04）
+
+在 v3.1 源码上修改，未另起项目。环境：Linux 沙箱（2 核），.NET SDK 8.0.404（沙箱重建后经 azureedge 断点续传重装）。
+
+## 问题 1 诊断验证（先验证后修）
+
+- 实机现象：BBDown banner「BBDown version 1.6.3」等 ASCII 行正常，中文行全部变成  —— 与「GBK 字节流被 UTF-8 解码器读出 U+FFFD」形态吻合（反向 UTF-8→GBK 乱码会是「鐧诲綍」错字而非 ）。
+- 源码实锤：`MainWindow.axaml.cs` 唯一的重定向子进程（OnStart 隐藏窗口路径，下载与 -info 共用）显式写了 `StandardOutputEncoding = UTF8 / StandardErrorEncoding = UTF8`，与诊断描述的「按 UTF-8 解码」一致（诊断说的「未显式设置」实际形态是「显式设成了 UTF-8」，根因相同）。
+- 其余拉起 BBDown.exe 的入口排查：-ia 交互选画质与扫码登录均走 `UseShellExecute` 可见控制台（无输出重定向，由控制台自身处理编码），BiliProbe 走 B 站 HTTP API（非子进程）——均不涉及，无需改动。
+- 日志区核实：仅有窗口内只读 LogBox（可复制文本），无「写日志文件」功能；解码修正后复制出的即为正确文本。
+
+## 改动清单
+
+1. **新增 `src/BBDownHelper.Core/ConsoleEncoding.cs`**（纯函数可单测）：`Resolve(int ansiCodePage)` 注册 `CodePagesEncodingProvider` 后按代码页取编码，非法/不支持回落 GB18030（GBK 超集）；`Current` 懒解析 `CultureInfo.CurrentCulture.TextInfo.ANSICodePage`。Core 项目新增 `System.Text.Encoding.CodePages` 8.0.0 包引用（.NET 8 默认不带 GBK 代码页）。
+2. **`src/BBDownHelper/MainWindow.axaml.cs`**：重定向子进程 stdout/stderr 编码 `UTF8` → `ConsoleEncoding.Current`。
+3. **程序图标**：`Assets/BBDownHelper.ico`（16~256 多尺寸，用户提供的成品 ICO）；csproj 加 `<ApplicationIcon>Assets\BBDownHelper.ico</ApplicationIcon>`（exe 文件图标/任务栏/快捷方式）；`MainWindow.axaml` 的 Window 加 `Icon="avares://BBDownHelper/Assets/BBDownHelper.ico"`（标题栏运行时图标）。
+4. 未按「让 BBDown 输出 UTF-8」方向改 BBDown 本体——bat 路线用户直接在 cmd 里跑会反向乱码。
+
+## 测试记录（Linux 实跑，dotnet test）
+
+- 命令：`dotnet test tests/BBDownHelper.Core.Tests -p:UseSharedCompilation=false`
+- 修复中第一轮：66 用例 / 1 失败（`Current_ResolvesAndRoundTrips`——断言写错口径：本沙箱西文系统 ANSI=1252/20127 本就无法编码中文，属测试断言超系统能力，非产品缺陷）
+- 修正断言为 ASCII 往返（中文往返由 Resolve(936)/Resolve(65001) 用例覆盖）后重跑：**66 通过 / 0 失败 / 0 跳过**（`Passed! - Failed: 0, Passed: 66, Skipped: 0, Total: 66, Duration: 445 ms`）
+- 59 个 v3.1 用例全部保持通过；新增 7 个（`ConsoleEncodingTests`）：
+  - `Resolve_Gbk936_GbkBytesDecodeToChinese`：GBK 字节样本（登录状态/视频标题/合并提示/下载完成）→ 正确中文，并断言样本确非合法 UTF-8（用例有效性自检）
+  - `Resolve_Gbk936_AsciiBannerUnchanged`：ASCII banner 经 GBK 解码不退化
+  - `Resolve_InvalidCodePage_FallsBackToGb18030`：0/-1/int.MinValue/999999 → gb18030
+  - `Resolve_Gb18030Fallback_StillDecodesGbkBytes`：回落编码是 GBK 超集
+  - `Resolve_Utf8CodePage65001_DecodesUtf8Chinese`：UTF-8 系统不误用 GBK
+  - `Current_ResolvesAndAsciiRoundTrips`：系统解析不抛异常、ASCII 往返、实例幂等
+  - `RegisterProvider_IsIdempotent`：重复注册不抛异常
+
+## 发布记录
+
+`dotnet publish` 沿用 v3.1 参数（Release / win-x64 / self-contained / PublishSingleFile / EnableCompressionInSingleFile / IncludeNativeLibrariesForSelfExtract）：
+- 产出 `publish_win_single/BBDownHelper.exe` → 交付名 **BBDownHelper-v3.2.exe**，45,626,694 字节
+- `file` 判定：`PE32+ executable (GUI) x86-64, for MS Windows`（单文件自包含）
+- PE 资源实检：RT_ICON 7 条 + RT_GROUP_ICON 1 组（与 ICO 的 7 尺寸一致）→ exe 文件图标已内嵌；Avalonia 资源索引含 `Assets/BBDownHelper.ico` → 窗口运行时图标已打包
+
+## v3.2 未验证范围（如实说明）
+
+- 图标在 Windows 任务栏、窗口标题栏、桌面快捷方式的实际渲染效果：沙箱无 Windows GUI，无法实测；已验证 ICO 多尺寸资源已正确嵌入 EXE（RT_ICON×7/RT_GROUP_ICON×1）与 Avalonia 资源包，需用户实机确认观感。
+- 乱码修复的端到端效果（真实 BBDown.exe GBK 输出 → 窗口日志显示中文）：沙箱无 Windows + 无 BBDown.exe 运行环境；解码逻辑本体以 GBK 字节样本单测覆盖，系统代码页解析在用户机器上首次运行时生效。
