@@ -15,8 +15,25 @@
   - `BiliProbe.cs` b23.tv 302 解析 + 裸数字三路探测（type=5/type=8/view?aid，判据 data!=null && media_count>0）
   - `RecognitionService.cs` 识别门面（短链解析后重分类、多候选消歧、单命中提示可反悔）
   - `CommandBuilder.cs` 参数组装（全部出自 BBDown CommandLineInvoker.cs 源码）
+  - `AppVersion.cs` 版本号单一来源常量
+  - `UpdateCheck.cs` 语义化版本比较 + 更新提示判定 + 24h 间隔缓存（纯逻辑可注入测试）
 - `src/BBDownHelper/` —— Avalonia 11 界面（识别卡片/候选选择/选项互斥/进度日志/取消/登录）
-- `tests/BBDownHelper.Core.Tests/` —— 77 个 xUnit 用例（v3.3：v3.2 的 66 个 + core 布局路径与迁移 11 个），Linux 上实跑通过
+- `tests/BBDownHelper.Core.Tests/` —— 178 个 xUnit 用例（v3.5：v3.4 的 117 个 + 版本比较/更新提示/缓存 61 个），Linux 上实跑通过
+
+## v3.5 变更（版本号显示 + 启动检查更新 + 生成器检查更新）
+- **版本号显示**：窗口标题改为「BBDown-fixed 下载助手 v1.0.3」，窗口底部右侧常驻小字 v1.0.3；版本号收敛为单一来源常量 `Core.AppVersion`（Release/ReleaseTag/WindowTitle/CornerLabel），csproj `<Version>` 同步升 3.5.0
+- **启动检查更新（GUI）**：启动后异步查一次 `api.github.com/repos/isxulong/BBDown-fixed/releases/latest`（5s 超时），语义化版本比较（`UpdateCheckLogic` 纯函数：v 前缀可选、最多 3 段、缺段补 0、预发布后缀忽略、解析失败按 0.0.0 不提示）；有新版本窗口顶部显示橙色提示条「发现新版本 vX.Y.Z → 点此查看下载」，点击打开发布页。**只提示不下载**，无任何自动下载/替换逻辑
+- **间隔缓存**：检查结果与时间戳写 `core\.update-check.json`，24 小时内不重复请求；缓存读写失败静默；网络失败/超时/被墙一律静默不报错不阻塞启动；时钟回拨（缓存时间在未来）按新鲜处理
+- **HTTP 层沿用 BiliApiProbe 可注入 mock 模式**（GetStringOverride/NowUtc/ReadTextOverride/WriteTextOverride 均可注入，61 个新单测不触网不碰真实磁盘）
+- **生成器网页检查更新**：`tools/bat下载命令生成器.html` 页面加载时 fetch 同一 GitHub latest 接口（浏览器跨域该接口放行），有新版本在页面顶部显示一行提示与发布页链接；失败静默；保持单文件零依赖；页眉「不联网」口径改为「可离线 · 启动时检查一次更新」
+- bat 脚本不动；检查更新为纯增量，任何异常不影响启动与主流程
+
+## v3.4 变更（输入后自动预览卡 + v1.0.2 质检 P3 批处理）
+- **自动预览卡**：输入网址/BV号/av号识别成功后，输入框下方自动联网显示视频封面缩略图（120×75）+ 标题（两行截断）+ UP 主 + 分 P 数；合集/系列显示「合集 · 共 N 个视频」。识别后约 500ms 防抖取数，输入再变会取消旧请求、过期结果不上屏；裸数字多候选在选定前不出卡；UP 主主页输入不出卡
+- **数据链路**：B 站 `view?bvid=` / `view?aid=` 接口（v3.4 新增 bvid 入口）取 title/pic/pages/owner，封面 http 直链统一规范成 https；合集/系列走 `medialist/info` 取 cover/upper/media_count
+- **降级**：网络失败/超时静默不显示卡片；视频不存在或已删除显示一句温和提示（不影响点「开始下载」重试）；封面加载失败显示占位色块。任何异常路径不影响识别→解析→下载主流程
+- **联网口径**：与现有识别探测一致（固定 UA + Referer；core\BBDown.data 存在时带登录 cookie），不新增外部依赖
+- **质检 P3**：`BBDown.archives`（已下载跳过记录）进首启动迁移白名单；迁移时目录枚举异常按空处理（绝不崩）；BUILD.md v3.3 段行号漂移修正；bat下载命令生成器.html 下载的 .bat 里 BBDown 调用行引号化为 `"%~dp0core\BBDown.exe"`（页面上的命令文本不变）
 
 ## v3.3 变更（core 子文件夹改造：防误双击 BBDown.exe）
 - **核心路径**：BBDown.exe 唯一位置改为 `<程序所在目录>\core\BBDown.exe`（Core 新增 `CoreLayout`，MainWindow 全部改走它，无第二处硬编码）。报错文案同步指引 v1.0.2 完整压缩包解压
