@@ -2,10 +2,22 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="BBDownHelper.MainWindow"
         Icon="avares://BBDownHelper/Assets/BBDownHelper.ico"
-        Title="BBDown 下载助手" Width="880" Height="780"
+        Width="880" Height="780"
         MinWidth="760" MinHeight="640">
-  <ScrollViewer>
+  <!-- v3.5：窗口标题由后台代码设置（AppVersion.WindowTitle 单一来源），XAML 不再写死 -->
+  <Grid RowDefinitions="*,Auto">
+  <ScrollViewer Grid.Row="0">
     <StackPanel Margin="18" Spacing="10">
+
+      <!-- v3.5：发现新版本提示条（启动后异步检查 GitHub latest release，失败静默不显示） -->
+      <Border x:Name="UpdateBanner" IsVisible="False" Padding="10" CornerRadius="8"
+              Background="#11CC8800" BorderBrush="#44CC8800" BorderThickness="1">
+        <StackPanel Orientation="Horizontal" Spacing="10">
+          <TextBlock x:Name="UpdateBannerText" VerticalAlignment="Center" FontSize="13"
+                     Foreground="#CC8800" FontWeight="SemiBold"/>
+          <Button x:Name="UpdateBannerBtn" Content="点此查看下载" Padding="12,4" FontSize="12"/>
+        </StackPanel>
+      </Border>
 
       <TextBlock Text="把 B 站链接粘贴到下面的框里，会自动识别类型；选好需求后点「开始下载」即可。"
                  TextWrapping="Wrap" FontSize="14"/>
@@ -13,6 +25,28 @@
       <!-- 输入 -->
       <TextBox x:Name="InputBox" AcceptsReturn="True" Height="64" TextWrapping="Wrap"
                Watermark="粘贴链接 / BV号 / av号 / 分享文字，粘贴后自动识别"/>
+
+      <!-- v3.4 预览卡：识别后自动联网取标题+封面（纯增强，失败静默不显示） -->
+      <Border x:Name="PreviewCard" IsVisible="False" Padding="10" CornerRadius="8"
+              Background="#11008866" BorderBrush="#33008866" BorderThickness="1">
+        <Grid ColumnDefinitions="120,*">
+          <Panel Width="120" Height="75" VerticalAlignment="Top">
+            <Border x:Name="CoverPlaceholder" Background="#22008866" CornerRadius="4"/>
+            <Image x:Name="CoverImage" Stretch="UniformToFill"/>
+          </Panel>
+          <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Top" Margin="12,2,0,0">
+            <TextBlock x:Name="PreviewKindText" FontSize="11" Foreground="#CC006699" FontWeight="SemiBold"/>
+            <TextBlock x:Name="PreviewTitleText" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"
+                       MaxLines="2" TextTrimming="CharacterEllipsis"/>
+            <TextBlock x:Name="PreviewUpText" FontSize="12" Opacity="0.75"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <!-- v3.4：视频不存在/已删除的温和提示（不报错、不阻塞下载流程） -->
+      <TextBlock x:Name="PreviewNotFoundText" IsVisible="False" FontSize="12" Foreground="#CC8800"
+                 TextWrapping="Wrap"
+                 Text="这个视频可能不存在或已删除。预览仅供参考，不影响你点「开始下载」重试。"/>
 
       <!-- 识别结果卡片 -->
       <Border x:Name="ResultCard" IsVisible="False" Padding="12" CornerRadius="8"
@@ -134,4 +168,10 @@
 
     </StackPanel>
   </ScrollViewer>
+
+  <!-- v3.5：界面右下角常驻版本小字（单一来源 AppVersion.CornerLabel） -->
+  <Border Grid.Row="1" Padding="14,3" Background="#08000000">
+    <TextBlock x:Name="VersionCorner" HorizontalAlignment="Right" FontSize="11" Opacity="0.5"/>
+  </Border>
+  </Grid>
 </Window>
