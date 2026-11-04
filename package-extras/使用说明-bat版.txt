@@ -1,21 +1,25 @@
-BBDown-fixed v1.0.0（bat 版）
+BBDown-fixed v1.0.2（bat 版）
 基于 BBDown 1.6.3 修复：扫码登录、凭据自动续期已修好
 
+v1.0.2 更新：BBDown.exe 等核心组件收进 core 文件夹，顶层只留 bat
+和工具，不会再误点出黑色窗口；三个 bat 与命令生成器已同步适配
+
 【这个包里有什么】
-- BBDown.exe         命令行核心，所有 bat 都在调用它
-- aria2c.exe         加速下载，需与 BBDown.exe 同文件夹
-- ffmpeg.exe         合并音视频，需与 BBDown.exe 同文件夹
+- core\ 文件夹       核心组件（BBDown.exe / aria2c.exe / ffmpeg.exe），
+                     所有 bat 都在调用它，别删、不用双击里面的东西
 - 3 个基础 bat        登录 / 默认下载 / 只看信息不下载
 - bat下载命令生成器.html  双击用浏览器打开，生成更多场景的专用 bat
 - BBDown命令使用指南.txt  零基础命令教程，想自己改 bat 就看它
 
 【第一次用 / 从旧版升级，必看】
-1. 从本修复版 v4 系列升级：文件夹里的 BBDown.data 直接保留，
-   凭据仍然有效，不用重新登录
+1. 从 v1.0.0 / v1.0.1 / v4 系列升级：解压新包后，把旧文件夹里的
+   BBDown.data 手动移进 core 文件夹（如有 BBDown.refresh_token、
+   BBDownTV.data 也一并移入），凭据仍然有效，不用重新登录
+   （bat 版没有自动迁移，EXE 界面版才有）
 2. 从官方 1.6.3 或更早版本过来：旧 BBDown.data 已失效，先删掉，
    再重新登录一次
 3. 登录方式：双击「B站下载(修改AV号) - 登录.bat」，用手机B站APP
-   扫码；成功后文件夹里会生成 BBDown.data，以后不用再扫
+   扫码；成功后 core 文件夹里会生成 BBDown.data，以后不用再扫
    （凭据到期前会自动续期）
 
 【下载视频】
@@ -23,7 +27,8 @@ BBDown-fixed v1.0.0（bat 版）
 需要合集选集、批量下载、指定清晰度等更多场景时：
 打开「bat下载命令生成器.html」，粘贴链接、按提示点几下，
 就能生成专用 bat——文件名里自带 BV 号 / ID，不会分不清是哪个任务的。
-想自己手写命令，打开《BBDown命令使用指南.txt》，零基础照着做即可。
+想自己手写命令，打开《BBDown命令使用指南.txt》，零基础照着做即可；
+注意手敲命令要写成 core\BBDown.exe 开头（指南里有说明）。
 
 【关于 UP 主主页（space.bilibili.com/xxxx）】
 BBDown 本身不支持一键下载 UP 主全部投稿：把 UP 主主页喂给它，
