@@ -5,5 +5,5 @@ rem  用法：改BV号后双击运行，信息会列在窗口里，不消耗下载流量
 rem  场景：写「指定清晰度」之前，先用它确认画质名字
 rem ==================================================
 cd /d %~dp0
-BBDown -info BV12Rxq6nECN
+"%~dp0core\BBDown.exe" -info BV12Rxq6nECN
 pause
