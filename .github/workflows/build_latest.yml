@@ -89,9 +89,15 @@ jobs:
           path: artifact-arm64/BBDown.exe
           if-no-files-found: error
 
+  # linux 两个任务固定在 22.04 系列（glibc 2.35）：
+  #   原仓库用 ubuntu:18.04 容器编译，就是为了压低 glibc 下限，让老发行版也能跑。
+  #   上一版误改用 ubuntu-latest（24.04，glibc 2.39），产物实测要求 GLIBC_2.38，
+  #   在 Ubuntu 22.04 / Debian 12 上直接起不来——属于兼容性回退，改回 22.04。
+  #   22.04 运行器 2026-09-17 起进入弃用期、2027-04-17 移除，到期前需再迁一次
+  #   （届时靠 container 固定 glibc，而不是跟着运行器版本走）。
   build-linux-x64:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -120,7 +126,7 @@ jobs:
   # 原来那套 ubuntu-18.04 预置容器也早已到期，不再依赖它。
   build-linux-arm64:
     needs: test
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v4
 
