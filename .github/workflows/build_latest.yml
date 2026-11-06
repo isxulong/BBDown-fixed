@@ -1,109 +1,175 @@
 name: Build Latest
 
-on: [push,workflow_dispatch]
+# 触发策略：
+#   - 只对 main 分支的 push 与手动触发运行。原来 `on: [push, ...]` 对 tag 推送也建一次，
+#     一次发版（先推 main、再推 tag）会重复跑两遍，纯浪费。
+#   - 同分支新提交会取消还在排队的旧构建。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   DOTNET_SDK_VERSION: '8.0.*'
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
 
 jobs:
 
-  build-win-x64-arm64:
-    
-    runs-on: windows-latest
-    
+  # 先跑测试再构建：测试挂了就不该继续出包。
+  # 两个测试套件都在 linux 上用「显式 build + --no-build」验证过（本机实跑：
+  #   BBDownHelper.Core.Tests 440 项全通过；BBDown.LoginTests 换票用例全通过）。
+  # 注意：dotnet test 带隐式构建在本机曾挂死，所以这里拆成 build / test 两步。
+  test:
+    runs-on: ubuntu-latest
     steps:
-      
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
 
       - name: Set up dotnet
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+      - name: Build BBDownHelper.Core.Tests
+        run: dotnet build BBDownHelper/tests/BBDownHelper.Core.Tests -c Release
+
+      - name: Run BBDownHelper.Core.Tests
+        run: dotnet test BBDownHelper/tests/BBDownHelper.Core.Tests -c Release --no-build
+
+      - name: Run login exchange tests
+        run: dotnet run --project BBDown.LoginTests -c Release
+
+  # 各平台在自己的操作系统上构建：BBDown/Directory.Build.props 里 PublishAot=true，
+  # AOT 原生编译不支持跨操作系统（本机实测 win-*/osx-* 在 linux 上直接报
+  # "Cross-OS native compilation is not supported"）。所以 runner 的 OS 必须跟目标平台一致。
+  build-win-x64:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up dotnet
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
 
       - run: dotnet publish BBDown -r win-x64 -c Release -o artifact-x64
-      - run: dotnet publish BBDown -r win-arm64 -c Release -o artifact-arm64
 
       - name: Upload Artifact[win-x64]
-        uses: actions/upload-artifact@v3.1.3
+        uses: actions/upload-artifact@v4
         with:
           name: BBDown_win-x64
-          path: artifact-x64\BBDown.exe
+          path: artifact-x64/BBDown.exe
+          if-no-files-found: error
 
-      - name: Upload Artifact[win-arm64]
-        uses: actions/upload-artifact@v3.1.3
-        with:
-          name: BBDown_win-arm64
-          path: artifact-arm64\BBDown.exe
-  
-
-  build-linux-x64:
-    
-    runs-on: ubuntu-latest
-    container: ubuntu:18.04
-    
+  build-win-arm64:
+    needs: test
+    runs-on: windows-latest
     steps:
-      
-      - run: apt-get update
-      - run: apt-get install -y curl wget
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
+
       - name: Set up dotnet
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
-      - run: apt-get install -y libicu-dev libcurl4-openssl-dev zlib1g-dev libkrb5-dev
+
+      - run: dotnet publish BBDown -r win-arm64 -c Release -o artifact-arm64
+
+      - name: Upload Artifact[win-arm64]
+        uses: actions/upload-artifact@v4
+        with:
+          name: BBDown_win-arm64
+          path: artifact-arm64/BBDown.exe
+          if-no-files-found: error
+
+  build-linux-x64:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+      - name: Install native prerequisites
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
+
       - run: dotnet publish BBDown -r linux-x64 -c Release -o artifact
-      
+
       - name: Upload Artifact[linux-x64]
-        uses: actions/upload-artifact@v3.1.3
+        uses: actions/upload-artifact@v4
         with:
           name: BBDown_linux-x64
           path: artifact/BBDown
+          if-no-files-found: error
 
+  # linux-arm64 需要 aarch64 交叉链接器与 objcopy：
+  #   本机实测缺 aarch64-linux-gnu-objcopy 时报
+  #   "Symbol stripping tool ('aarch64-linux-gnu-objcopy') not found in PATH"。
+  #   原配置靠一个 ubuntu-18.04 时代的预置容器绕过，那个基础镜像早已走到生命周期末尾；
+  #   这里改成在标准 ubuntu-latest 上装交叉工具链，不再依赖过期镜像。
   build-linux-arm64:
-    
+    needs: test
     runs-on: ubuntu-latest
-    container: mcr.microsoft.com/dotnet-buildtools/prereqs:ubuntu-18.04-cross-arm64-20220312201346-b2c2436
-    
     steps:
-      
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
+
       - name: Set up dotnet
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
-      - run: dotnet publish BBDown -r linux-arm64 -c Release -p:StripSymbols=true -p:CppCompilerAndLinker=clang-9 -p:SysRoot=/crossrootfs/arm64 -o artifact
-      
+
+      - name: Install cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang zlib1g-dev gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+
+      - run: >
+          dotnet publish BBDown -r linux-arm64 -c Release
+          -p:CppCompilerAndLinker=aarch64-linux-gnu-gcc
+          -o artifact
+
       - name: Upload Artifact[linux-arm64]
-        uses: actions/upload-artifact@v3.1.3
+        uses: actions/upload-artifact@v4
         with:
           name: BBDown_linux-arm64
           path: artifact/BBDown
-          
+          if-no-files-found: error
+
   build-mac-x64-arm64:
-    
-    runs-on: macOS-latest
-    
+    needs: test
+    runs-on: macos-latest
     steps:
-      
-      - uses: actions/checkout@v1
-      
+      - uses: actions/checkout@v4
+
       - name: Set up dotnet
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
       - run: dotnet publish BBDown -r osx-arm64 -c Release -o artifact-arm64
       - run: dotnet publish BBDown -r osx-x64 -c Release -o artifact-x64
 
-      
       - name: Upload Artifact[osx-x64]
-        uses: actions/upload-artifact@v3.1.3
+        uses: actions/upload-artifact@v4
         with:
           name: BBDown_osx-x64
           path: artifact-x64/BBDown
-          
+          if-no-files-found: error
+
       - name: Upload Artifact[osx-arm64]
-        uses: actions/upload-artifact@v3.1.3
+        uses: actions/upload-artifact@v4
         with:
           name: BBDown_osx-arm64
           path: artifact-arm64/BBDown
+          if-no-files-found: error
