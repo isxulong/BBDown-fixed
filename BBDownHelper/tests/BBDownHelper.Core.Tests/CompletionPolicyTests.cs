@@ -77,4 +77,49 @@ public class CompletionPolicyTests
         Assert.Equal(CompletionOutcome.UpExportFailed,
             CompletionPolicy.Route(false, upSpace: true, interactive: true, exitCode: 0, listFound: false));
     }
+
+    // ===== 本轮回归（内核失败但退出码 0）=====
+
+    /// <summary>
+    /// 内核 Program.cs:664/753 合并失败、:767 解析失败都只打红字后 return，
+    /// 进程照常以 0 退出。只看退出码会把「零产出」报成「下载完成」。
+    /// </summary>
+    [Fact]
+    public void Route_ExitZero_WithMergeFailureSignal_MapsToDownloadFailed()
+    {
+        string tail = "[2026-11-06 10:00:00.000] - 开始合并音视频...\n"
+                    + "[2026-11-06 10:00:01.000] - 合并失败";
+        Assert.True(CompletionPolicy.HasFailureSignal(tail));
+        Assert.Equal(CompletionOutcome.DownloadFailed,
+            CompletionPolicy.Route(false, upSpace: false, interactive: false, exitCode: 0, listFound: false,
+                failureSignaled: true));
+    }
+
+    [Fact]
+    public void Route_ExitZero_NoFailureSignal_StillSuccess()
+    {
+        string tail = "[2026-11-06 10:00:00.000] - 下载P1完毕\n[2026-11-06 10:00:00.000] - 任务完成";
+        Assert.False(CompletionPolicy.HasFailureSignal(tail));
+        Assert.Equal(CompletionOutcome.DownloadSuccess,
+            CompletionPolicy.Route(false, upSpace: false, interactive: false, exitCode: 0, listFound: false,
+                failureSignaled: false));
+    }
+
+    /// <summary>裸「失败」会命中「重试失败次数」这类无害文本，判据不能放宽到那个粒度。</summary>
+    [Fact]
+    public void HasFailureSignal_BareFailWord_NotMatched()
+    {
+        Assert.False(CompletionPolicy.HasFailureSignal("重试失败次数: 1（已自动恢复）"));
+        Assert.False(CompletionPolicy.HasFailureSignal("封面下载失败，已跳过"));
+        Assert.True(CompletionPolicy.HasFailureSignal("解析此分P失败(建议--debug查看详细信息)"));
+    }
+
+    /// <summary>-ia 是用户可见控制台，语义保持只看退出码（避免把用户自己关窗判成下载失败）。</summary>
+    [Fact]
+    public void Route_Interactive_KeepsExitCodeSemantics()
+    {
+        Assert.Equal(CompletionOutcome.IaEndedOk,
+            CompletionPolicy.Route(false, upSpace: false, interactive: true, exitCode: 0, listFound: false,
+                failureSignaled: true));
+    }
 }

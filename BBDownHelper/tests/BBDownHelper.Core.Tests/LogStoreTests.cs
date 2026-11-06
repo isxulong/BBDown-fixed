@@ -80,6 +80,33 @@ public class LogStoreTests
     }
 
     [Fact]
+    public void FileSink_ScrubsCredentials_MemoryKeepsRaw()
+    {
+        // 本轮 P2 回归：core\logs\helper-*.log 会被用户整个文件夹打包外发，
+        // 磁盘这份必须打码；同时内存缓冲保留原始行，让用户当场看得懂。
+        var dir = Path.Combine(Path.GetTempPath(), "logstore-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string? file;
+            const string raw = "登录成功: AccessToken=tvsecret123456";
+            using (var store = new LogStore(dir, flushMs: 10_000))
+            {
+                store.Append(raw);
+                store.Flush();
+                file = store.CurrentFile;
+                Assert.NotNull(file);
+                // 内存里仍是原文——界面要显示用户能看懂的原始行
+                Assert.Contains(raw, store.Recent(10));
+            }
+            var text = File.ReadAllText(file!);
+            Assert.DoesNotContain("tvsecret123456", text);   // 磁盘这份已打码
+            Assert.Contains("AccessToken=", text);           // 键名保留，仍能看出是哪一步
+            Assert.Contains("***", text);
+        }
+        finally { try { Directory.Delete(dir, true); } catch { } }
+    }
+
+    [Fact]
     public void FileSink_BadDir_FailsSilently_KeepsMemoryWorking()
     {
         // 父路径是一个已存在的文件：任何平台上在此之下建目录都会失败（跨平台可靠触发）。
