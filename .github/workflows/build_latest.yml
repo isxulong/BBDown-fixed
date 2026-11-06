@@ -112,14 +112,15 @@ jobs:
           path: artifact/BBDown
           if-no-files-found: error
 
-  # linux-arm64 需要 aarch64 交叉链接器与 objcopy：
-  #   本机实测缺 aarch64-linux-gnu-objcopy 时报
-  #   "Symbol stripping tool ('aarch64-linux-gnu-objcopy') not found in PATH"。
-  #   原配置靠一个 ubuntu-18.04 时代的预置容器绕过，那个基础镜像早已走到生命周期末尾；
-  #   这里改成在标准 ubuntu-latest 上装交叉工具链，不再依赖过期镜像。
+  # linux-arm64 走 arm64 原生 runner，不做交叉编译：
+  #   实测在 x64 ubuntu 上交叉编译会失败——先报缺 aarch64-linux-gnu-objcopy，
+  #   装了 binutils 后又在链接阶段报 "aarch64-linux-gnu-gcc: unrecognized command-line
+  #   option '--target=aarch64-linux-gnu'"（AOT 给链接器传的是 clang 风格参数）。
+  # 本仓库是公开仓库，arm64 标准 runner（ubuntu-24.04-arm）可直接使用，原生编译最稳。
+  # 原来那套 ubuntu-18.04 预置容器也早已到期，不再依赖它。
   build-linux-arm64:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
 
@@ -128,16 +129,10 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
 
-      - name: Install cross toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            clang zlib1g-dev gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+      - name: Install native prerequisites
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
 
-      - run: >
-          dotnet publish BBDown -r linux-arm64 -c Release
-          -p:CppCompilerAndLinker=aarch64-linux-gnu-gcc
-          -o artifact
+      - run: dotnet publish BBDown -r linux-arm64 -c Release -o artifact
 
       - name: Upload Artifact[linux-arm64]
         uses: actions/upload-artifact@v4
