@@ -36,10 +36,12 @@ import zipfile
 REPO_ROOT_DEFAULT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERSION_SOURCE = os.path.join("src", "BBDownHelper.Core", "AppVersion.cs")
 GENERATOR_HTML = os.path.join("tools", "bat下载命令生成器.html")
+MV_RE = re.compile(r"当前版本 (v[0-9.]+)")   # 生成器页面页眉的可见版本行
 GENERATOR_VERSION_RE = re.compile(r'(var\s+CURRENT_VERSION\s*=\s*")([^"]+)(")')
 RELEASE_CONST_RE = re.compile(r'public\s+const\s+string\s+Release\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"')
 LITERAL_RE = re.compile(r"1\.0\.[0-9]+")
 PINNED_RELEASE_LINES = (20, 21, 22)   # UpdateCheckTests.cs 的 Release/ReleaseTag/WindowTitle 断言行
+DOC_UPDATE_HEAD_RE = re.compile(r"v[0-9.]+ 更新(?:（[^）]*）)?：")   # 「v1.0.6 更新：」与「v1.0.6 更新（接着 v1.0.5…）：」两种写法都要认；只认前者会让带括号的正文标题在下一个版本静默漏改   # UpdateCheckTests.cs 的 Release/ReleaseTag/WindowTitle 断言行
 
 # 组装布局（自 core 布局引入版起，EXE 版与 bat 版统一，见 package-extras/README.md）
 EXE_LAYOUT = [
@@ -83,6 +85,9 @@ EXEMPT_RULES = [
      "页面里两处「core 布局自某个历史版本起」的说明文字（历史事实）；页面版本常量 CURRENT_VERSION 走独立钉死检查"),
     (r"^(src|tests)/.*\.(cs|csproj)$", "whitelist",
      "代码注释 / csproj 注释里的历史版本（迁移说明、批次记录）与测试夹具值；发布号只认 AppVersion.Release，注释与夹具不参与运行"),
+    (r"^维护者手册\.md$", "whitelist",
+     "接手知识文档：文中版本号是历史事实与事故记录（哪一版踩了哪个坑），不随发版变化；"
+     "只有「现在已经发到哪一版」一节需要人工保持最新，脚本无法判断其对错，故整篇豁免并在此写明理由"),
     (r"^src/BBDownHelper/app\.manifest$", "whitelist",
      "Win32 清单程序集版本（四段式）是 Windows 加载器口径，与套件对外发布号是两个体系"),
 ]
@@ -210,10 +215,17 @@ def inject_doc_header(doc_text, tag, flavor):
     if not lines:
         raise RuntimeError("说明文档为空")
     lines[0] = re.sub(r"BBDown-fixed v[0-9.]+（", "BBDown-fixed %s（" % tag, lines[0], count=1)
+    hit = None
     for i, line in enumerate(lines[:12]):
-        if re.match(r"v[0-9.]+ 更新：", line.strip()):
-            lines[i] = "%s 更新：" % tag
+        if DOC_UPDATE_HEAD_RE.match(line.strip()):
+            hit = i
             break
+    # 说明正文的「更新」标题必须跟着版本走。旧实现没命中就静默跳过、只改首行，
+    # 结果是新版本号配着上一版的更新条目发出去（2026-11-06 实测踩到过）。
+    if hit is None:
+        raise RuntimeError("说明文档前 12 行里没找到「更新」小标题，无法注入版本：%s" % lines[0])
+    # 保留标题里原有的括号补充说明，只替换版本号
+    lines[hit] = re.sub(r"^v[0-9.]+", tag, lines[hit].strip())
     if flavor == "bat" and "bat 版" not in lines[0]:
         raise RuntimeError("bat 版说明首行没标识 bat 版：%r" % lines[0])
     if flavor == "exe" and "bat 版" in lines[0]:
@@ -378,6 +390,9 @@ def check_literals(root, release=None, skip_dirs=()):
                         reason = ("JS 注释里的批次记录（不渲染给用户，不参与运行）" if _in_js_comment(line)
                                   else "页面里「core 布局自 v1.0.2 起」的历史说明文字（按内容锚定）")
                         whitelisted.append((item, reason))
+                    elif MV_RE.search(line) and release is not None \
+                            and MV_RE.search(line).group(1) == ("v" + release):
+                        pinned.append(item + "   ← 页面页眉可见版本，必须等于当前 ReleaseTag")
                     else:
                         stale.append(item)   # 页面里的其他版本串出现即异常
                 else:
@@ -518,6 +533,12 @@ def check_version_injection(info, exe_dir, bat_dir, root):
     m = GENERATOR_VERSION_RE.search(_read_text(os.path.join(root, GENERATOR_HTML)))
     note(bool(m) and m.group(2) == info["release"],
          "仓库生成器页面 CURRENT_VERSION = %r 与 AppVersion.Release 一致" % (m.group(2) if m else None))
+    # 仓库页面上的「当前版本 vX」可见行同样必须跟 Release 走。
+    # 只查 CURRENT_VERSION 不够：版本常量对齐了、页眉还挂着旧版本号时，用户看到的是旧的
+    # （2026-11-06 实测：仓库此行为 v1.0.5、发布包里是 v1.0.6，而当时没有任何一条检查盯它）。
+    gen_repo = _read_text(os.path.join(root, GENERATOR_HTML))
+    note(("当前版本 %s" % info["tag"]) in gen_repo,
+         "仓库生成器页面页眉含版本 %s" % info["tag"])
     # 压缩包名派生
     note(info["zip_exe"].startswith("BBDown-fixed-%s" % info["tag"]), "压缩包名 %s" % info["zip_exe"])
     note(info["zip_bat"].startswith("BBDown-fixed-%s" % info["tag"]), "压缩包名 %s" % info["zip_bat"])
