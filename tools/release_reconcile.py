@@ -86,8 +86,12 @@ EXEMPT_RULES = [
     (r"^src/BBDownHelper/app\.manifest$", "whitelist",
      "Win32 清单程序集版本（四段式）是 Windows 加载器口径，与套件对外发布号是两个体系"),
 ]
-# 豁免表里 whitelist_partial 允许的行号白名单
-GENERATOR_HISTORIC_LINES = {1519, 1646}
+# 生成器页面里两处「core 布局自某个历史版本起」的用户可见说明：按内容锚定，不按行号
+# （行号锚定会在页面插入一行后静默失效，把真说明误判成版本散落——2026-11-06 实测过）。
+GENERATOR_HISTORIC_ANCHORS = (
+    "默认不勾：BBDown.exe 在 core 子文件夹（本套件 v1.0.2 起的压缩包布局）",
+    "本套件压缩包（v1.0.2 起）自带 BBDown.exe，位于 core 文件夹",
+)
 
 # 逐字节比对里按形态「设计性不同」的文件：两包各出一份面向自身形态的版本，不能当同一文件比对。
 PER_FLAVOR_DIFF = {
@@ -369,8 +373,11 @@ def check_literals(root, release=None, skip_dirs=()):
                             pinned.append(item + "   ← 页面版本常量，必须等于 AppVersion.Release")
                         else:
                             pin_bad.append(item + "   ← 页面版本常量与 Release 不符")
-                    elif i in GENERATOR_HISTORIC_LINES:
-                        whitelisted.append((item, rule[2]))
+                    elif _in_js_comment(line) \
+                            or any(a in line for a in GENERATOR_HISTORIC_ANCHORS):
+                        reason = ("JS 注释里的批次记录（不渲染给用户，不参与运行）" if _in_js_comment(line)
+                                  else "页面里「core 布局自 v1.0.2 起」的历史说明文字（按内容锚定）")
+                        whitelisted.append((item, reason))
                     else:
                         stale.append(item)   # 页面里的其他版本串出现即异常
                 else:
@@ -397,6 +404,22 @@ def check_literals(root, release=None, skip_dirs=()):
         lines.append("未归类（必须处置，否则视为版本散落）：")
         lines.extend("  ! " + s for s in stale)
     return Report_section("对账二 · 版本字面量位置清单", not stale and not pin_bad, lines)
+
+
+def _in_js_comment(line):
+    """该行是否处于 JS 单行注释（// ...）或注释块内（/* */）。
+    用于生成器页面：注释里的版本号是批次记录，不渲染给用户、不参与运行，不应算版本散落。
+    只认真正的注释起点，字符串里的 "//"（如 URL）不算。"""
+    s = line.strip()
+    if s.startswith("//") or s.startswith("/*") or s.startswith("*"):
+        return True
+    # 行内 `// ` 之后的内容：前面若没有引号包裹，视为注释尾
+    idx = line.find("// ")
+    if idx > 0:
+        head = line[:idx]
+        if head.count('"') % 2 == 0 and head.count("'") % 2 == 0:
+            return True
+    return False
 
 
 def _match_rule(rel):
