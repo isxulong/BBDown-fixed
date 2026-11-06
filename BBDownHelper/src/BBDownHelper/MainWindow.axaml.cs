@@ -322,18 +322,27 @@ public partial class MainWindow : Window
 
     // ---------- v4.0（R3.11）：首启引导「用『下载』文件夹」 ----------
 
+    /// <summary>
+    /// v1.0.6（真机反馈 #1）：这里原先是硬拼 %USERPROFILE%\Downloads，
+    /// 用户改过系统「下载」文件夹位置（如搬到 E:\Downloads）时会指向 C 盘那个空目录。
+    /// 改为经 <see cref="DownloadsFolderLocator"/> 取系统真实「下载」已知文件夹。
+    /// </summary>
     private void OnUseDownloads(object? sender, RoutedEventArgs e)
     {
         try
         {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+            var resolution = DownloadsFolderLocator.Resolve();
+            var dir = resolution.Path;
             Directory.CreateDirectory(dir);   // 少数系统没有 Downloads 文件夹：顺手建好
             DirText.Text = dir;
             _config.SaveDir = dir;
             SaveConfig();
             FirstRunDirBanner.IsVisible = false;
             AppendLog("保存位置已设为：" + dir);
+            // 走了兜底（没读到系统已知文件夹）时说明一句，避免用户以为系统「下载」就在这儿
+            if (resolution.From == DownloadsFolderLocator.Source.Fallback)
+                AppendLog("（没读到系统的「下载」文件夹位置，已退回用户目录下的 Downloads；"
+                          + "如不对请点「自己浏览选择…」手动指定。）");
         }
         catch
         {

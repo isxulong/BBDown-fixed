@@ -706,9 +706,20 @@ namespace BBDown
                         File.Exists(coverPath) ? coverPath : "",
                         lang,
                         subtitleInfo, myOption.AudioOnly, myOption.VideoOnly, p.points, p.pubTime, myOption.SimplyMux);
+                    // v1.0.6（真机反馈 #3/#4）：RunExe 现在返回混流程序的真实退出码，
+                    // 三个条件是「或」关系——任一条不满足都算失败：
+                    //   退出码非 0（ffmpeg/mp4box 自己报错，哪怕留下了半成品文件）
+                    //   成品文件不存在 / 长度为 0（程序根本没产出）
+                    // 宁可判失败让用户重试（可恢复），也不能把播不了的半成品记成成功（会进归档、永久跳过）。
                     if (code != 0 || !File.Exists(savePath) || new FileInfo(savePath).Length == 0)
                     {
-                        LogError("合并失败"); return false;
+                        LogError(code != 0
+                            ? $"合并失败（混流程序退出码 {code}）"
+                            : "合并失败（没有生成成品文件）");
+                        LogDebug("合并失败详情: code={0}, savePath={1}, exists={2}, length={3}",
+                            code, savePath, File.Exists(savePath),
+                            File.Exists(savePath) ? new FileInfo(savePath).Length : 0);
+                        return false;
                     }
                     Log("清理临时文件...");
                     Thread.Sleep(200);
@@ -795,9 +806,16 @@ namespace BBDown
                         File.Exists(coverPath) ? coverPath : "",
                         lang,
                         subtitleInfo, myOption.AudioOnly, myOption.VideoOnly, p.points, p.pubTime, myOption.SimplyMux);
+                    // v1.0.6（真机反馈 #3/#4）：与 dash 路径同一判定口径，见上方详细注释。
                     if (code != 0 || !File.Exists(savePath) || new FileInfo(savePath).Length == 0)
                     {
-                        LogError("合并失败"); return false;
+                        LogError(code != 0
+                            ? $"合并失败（混流程序退出码 {code}）"
+                            : "合并失败（没有生成成品文件）");
+                        LogDebug("合并失败详情: code={0}, savePath={1}, exists={2}, length={3}",
+                            code, savePath, File.Exists(savePath),
+                            File.Exists(savePath) ? new FileInfo(savePath).Length : 0);
+                        return false;
                     }
                     // 修复（第三轮自查）：此处已经过了上方「合并失败」判定，说明成品文件
                     // 已存在且非空——下载这件事本身已经成功。清理临时文件只是收尾，

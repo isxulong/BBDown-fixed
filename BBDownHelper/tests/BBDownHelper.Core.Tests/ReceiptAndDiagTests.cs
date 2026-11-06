@@ -209,7 +209,7 @@ public class CrashHandlerTests
             var text = File.ReadAllText(path);
             Assert.Contains("boom-marker", text);
             Assert.Contains("tail-line-2", text);
-            Assert.Contains("v1.0.5", text);   // 版本号随现场落盘
+            Assert.Contains("v1.0.6", text);   // 版本号随现场落盘
         }
         finally { try { Directory.Delete(dir, true); } catch { } }
     }

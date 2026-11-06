@@ -8,7 +8,7 @@ namespace BBDownHelper.Core;
 public static class AppVersion
 {
     /// <summary>对外发布版本号（v1.0.x 套件版本），不带 v 前缀。</summary>
-    public const string Release = "1.0.5";
+    public const string Release = "1.0.6";
 
     /// <summary>带 v 前缀的发布版本号，用于界面展示与更新比较。</summary>
     public const string ReleaseTag = "v" + Release;

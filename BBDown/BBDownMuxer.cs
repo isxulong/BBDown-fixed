@@ -17,14 +17,33 @@ namespace BBDown
         public static string FFMPEG = "ffmpeg";
         public static string MP4BOX = "mp4box";
 
+        /// <summary>
+        /// 运行外部混流程序并返回它的真实退出码。
+        ///
+        /// 修复（v1.0.6，真机反馈 #3/#4）：原实现 <c>int code = 0;</c> 声明后从未赋值，
+        /// 直接 <c>return code;</c> —— 于是本方法**恒返回 0**，
+        /// 上层「合并失败」判定只剩「成品文件不存在或长度 0」这一条。
+        /// 后果有两类：
+        ///  ① ffmpeg 中途失败时会留下一个非空的半成品文件，被判成功 → 报「任务完成」，
+        ///     用户拿到一个播不了的视频，且该分P还会进归档、下次永久跳过；
+        ///  ② 任何异常退出（参数错误、被替换成别的程序）只要没生成文件也被记成 0。
+        /// 真机日志里出现过「Enter command / Parse error」之后仍打印「任务完成」，就是这个洞。
+        ///
+        /// 另一处修复：<c>RedirectStandardInput = true</c> 并在启动后立刻关闭标准输入。
+        /// 原实现只重定向 stderr，子进程直接继承用户的控制台输入 ——
+        /// 被误当成 ffmpeg 的 <c>timeout.exe</c> 会进入它自己的交互命令模式，
+        /// 把用户随后敲进命令行的内容（<c>echo 退出码=%ERRORLEVEL%</c>）吃掉半截，
+        /// 表现为日志里出现 <c>Parse error ... 'ho ?????=%ERRORLEVEL%'</c> 这种诡异行。
+        /// 关掉标准输入后，子进程读到 EOF 立即退出，绝不碰用户的键盘输入。
+        /// </summary>
         private static int RunExe(string app, string parms, bool customBin = false)
         {
-            int code = 0;
             Process p = new();
             p.StartInfo.FileName = app;
             p.StartInfo.Arguments = parms;
             p.StartInfo.UseShellExecute = false;
             p.StartInfo.RedirectStandardError = true;
+            p.StartInfo.RedirectStandardInput = true;   // v1.0.6：子进程不得继承/抢占控制台输入
             p.StartInfo.CreateNoWindow = false;
             p.ErrorDataReceived += delegate (object sendProcess, DataReceivedEventArgs output) {
                 if (!string.IsNullOrWhiteSpace(output.Data))
@@ -32,8 +51,10 @@ namespace BBDown
             };
             p.StartInfo.StandardErrorEncoding = Encoding.UTF8;
             p.Start();
+            try { p.StandardInput.Close(); } catch { /* 关闭失败不影响主流程 */ }
             p.BeginErrorReadLine();
             p.WaitForExit();
+            int code = p.ExitCode;   // v1.0.6：修复恒返回 0
             p.Close();
             p.Dispose();
             return code;

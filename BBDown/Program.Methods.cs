@@ -428,7 +428,11 @@ namespace BBDown
                 foreach (var a in parsedResult.AudioTracks)
                 {
                     int pDur = pageDur == 0 ? a.dur : pageDur;
-                    LogColor($"{index++}. [{a.codecs}] [{a.bandwith} kbps] [~{FormatFileSize(pDur * a.bandwith * 1024 / 8)}]", false);
+                    // v1.0.6（真机反馈 #2）：B 站会同时下发多条码率相同的音频轨
+                    // （实测同一视频返回 30280 与 30232，带宽均为 77286），
+                    // 只打「[M4A] [77 kbps] [~18.15 MB]」两条完全相同、用户无法分辨。
+                    // 补上轨道 id，让两条同码率轨道可区分；仅展示用途，不参与选轨。
+                    LogColor($"{index++}. [{a.codecs}] [{a.id}] [{a.bandwith} kbps] [~{FormatFileSize(pDur * a.bandwith * 1024 / 8)}]", false);
                     if (onlyShowInfo) Console.WriteLine(a.baseUrl);
                 }
             }
