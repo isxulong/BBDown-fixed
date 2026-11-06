@@ -2754,9 +2754,29 @@ summary:focus-visible {
     function init() {
       cacheEls();
       bind();
+      prefillFromHash();  // v1.0.4 R3.13：EXE 版经 #up= 传入 UP 主主页链接时预填并识别
       syncLayoutNotes();
       renderRecognition();
       checkUpdate();   // 加载时查一次更新（失败静默，不影响页面任何功能）
+    }
+
+    /* ---------- 预填（v1.0.4 R3.13） ---------- */
+    /* EXE 界面版导出 UP 投稿清单后，以 file URL + #up=<url-encoded> 打开本页。
+       只认 #up 这一个参数；取不到、解不出、或页面已由用户输入过内容时一律不动。
+       file:// 下 location.hash 可用，无需网络。 */
+    function prefillFromHash() {
+      try {
+        var hash = String(location.hash || "");
+        if (!hash || hash.charAt(0) !== "#") return;
+        var q = hash.slice(1);
+        if (q.indexOf("up=") !== 0) return;
+        var v = q.slice(3);
+        if (!v) return;
+        var url = decodeURIComponent(v);
+        if (!url) return;
+        if (el.source.value && el.source.value.trim()) return;  // 用户已输入，不覆盖
+        el.source.value = url;
+      } catch (e) { /* 解码失败等：静默，页面照常使用 */ }
     }
 
     if (document.readyState === "loading") {
@@ -2768,7 +2788,7 @@ summary:focus-visible {
 
   /* ---------- 检查更新（纯增量：任何失败静默） ---------- */
   /* 本页面对应的套件版本，单一来源；发版时改这一处 */
-  var CURRENT_VERSION = "1.0.3";
+  var CURRENT_VERSION = "1.0.4";
   var LATEST_RELEASE_API = "https://api.github.com/repos/isxulong/BBDown-fixed/releases/latest";
 
   function parseVer(tag) {

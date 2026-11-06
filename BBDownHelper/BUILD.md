@@ -423,3 +423,168 @@ BBDown 的 `-ia` 需要用户在控制台里输入序号选画质，隐藏的重
 - 412 矩阵基于沙箱数据中心 IP：居民宽带 IP 下首试全家桶头能否直接 200 未验证（两档设计已保证被拦时降级重试兜底）；B 站风控策略随 IP/时间变动，若两端点未来对无 UA 请求也 412，预览卡将退回「静默不出卡」契约（主流程不受影响）。
 - 封面图床（i0/i1.hdslb.com）在 v3.6 未改请求口径（UA+Referer 同 v3.4，实测 200），未对图床做 412 矩阵（蓝队报告仅涉 view 端点）。
 - dotnet test / build / publish 均在 Linux 侧验证；EXE 未在 Windows 实机运行。
+
+
+
+## v3.8（v1.0.4 批次 2）变更与验证记录
+
+范围：地基三件套（LogStore / AppConfig / ErrorMapper + CrashHandler）先行，其上落地
+P2-1 启动失败假死修复与 R2.1~R2.11（R2.9 已由 LogStore/Export 天然覆盖，无单独改动项）。
+
+- 测试门：`dotnet test tests/BBDownHelper.Core.Tests` **342/342 通过**
+  （268 基线 + 74 新增：LogStore 8 / AppConfig 7 / ErrorMapper 14 / CompletionPolicy 10 /
+  StorageGuard 9 / InstallPathGuard 5 / LogDisplayPolicy 6 / LoginReceiptPolicy+DiagnosticExport+CrashHandler 10 /
+  SingleInstanceGuard 5）。
+- 编译门：`dotnet build src/BBDownHelper -p:UseSharedCompilation=false` **0 Warning 0 Error**。
+- 发布：`dotnet publish` 参数沿用（Release / win-x64 / self-contained / PublishSingleFile /
+  EnableCompressionInSingleFile / IncludeNativeLibrariesForSelfExtract）；
+  产出 **BBDownHelper-v3.8.exe**，45,678,229 字节；内部程序集版本 3.8.0；对外发布号仍为 v1.0.3
+  （AppVersion.Release 不动，发版批统一改）。
+
+### v3.8 高风险自检（R2.1 / R2.2 状态机）
+
+- 取消确认时序：CancelBtn → ConfirmDialog（与关窗同一组件同一标准）→ 确认后才置 `_cancelling=true`
+  并 Kill；确认框打开期间进程若自然结束，确认返回后先复检 `_proc is null` 直接返回，不误伤新任务。
+  取消判定全链路只用显式 bool `_cancelling`，不再比较 StatusText 字符串；Exited 里读完即复位。
+- -ia 与正常下载互斥：两条路径共用同一个 `_proc` 槽位与同一个 `OnProcExited` 出口；
+  `_proc` 非空期间 StartButtonPolicy 一律禁用开始钮（-ia 也禁用），不可能同时存在两个任务进程；
+  Exited 先挂事件再 Start，杜绝秒退丢完成态。
+- 关窗拦截路径：`OnClosing` 判定 `_proc is not null`（-ia 进程同样登记 `_proc`，因此 -ia 运行中
+  关窗同样弹确认并 Kill），确认后 `_forceClosing=true` 使 Exited 不再碰 UI；登录进程走独立
+  `_loginProc` 槽位，不触发关窗拦截（与 v3.7 口径一致）。
+
+### v3.8 未验证范围（如实说明）
+
+- 沙箱无 Windows GUI：黄条/失败醒目条/完成操作行/日志高亮的实机视觉、MessageBeep 提示音、
+  单实例激活已有窗口的实机表现、-ia 可见控制台的 Kill 行为，均未实机走查；状态机判定逻辑本体
+  以 CompletionPolicy 等纯函数单测覆盖，UI 侧为代码审查级确认。
+- 崩溃钩子（CrashHandler）的进程级触发路径未在实机制造崩溃验证（写文件逻辑 WriteCrashFile 有单测）。
+- 登录回执按 core\BBDown.data 存在性判定：BBDown 若未来改凭据文件位置/名称需同步调整。
+- dotnet test / build / publish 均在 Linux 侧交叉验证；EXE 未在 Windows 实机运行。
+
+
+
+## v3.9（红队复检批次：P2-1 / P2-2 修复）变更与验证记录
+
+范围：仅修红队审查（v3.8 批次 2 报告）命中的 2 项 P2，不夹带其他改动；P3-1～P3-4 记待办不在本批。
+基线 v3.8 = 342 测试；对外发布号 AppVersion.Release 仍 1.0.3 不动，内部程序集版本升至 3.9.0。
+
+- P2-1 求助导出脱敏加宽（DiagnosticExport.cs SecretRx / Scrub）：命中敏感键名
+  （SESSDATA|bili_jct|DedeUserID|refresh_token|access_key|cookie，忽略大小写）后其后的值一律打码，
+  覆盖三类分隔形态——= / : 键值（键后可带 JSON 引号，如 "SESSDATA":"..."）、tab 分隔、≥2 空格分隔；
+  引号包裹的带空格值整体打码并保留引号（"SESSDATA":"***"）。同步把导出文案「不含 Cookie 值」
+  的绝对化宣称改为按实际覆盖能力如实描述（DiagnosticExport.BuildContent 说明行 +
+  MainWindow 导出回执）。
+- P2-2 LogStore 落盘竞态修复（LogStore.cs WriteFileNoThrow）：写路径整体纳入 _gate 串行化
+  （合帧 Timer 线程与 UI 线程 Flush 并发安全，StreamWriter 不再被并发写）；落盘失败改退避重试——
+  本次放弃、下次合帧自动重开 writer，写成功清零计数；连续失败 3 次
+  （MaxConsecutiveFileFailures）才停用落盘，并在内存环形缓冲留一行「落盘已停用」标记，
+  任何失败路径下内存缓冲与上屏保持完整可用。
+- 测试门：`dotnet test tests/BBDownHelper.Core.Tests` **350/350 通过**（342 基线 + 8 新增：
+  Scrub JSON 形态 / JSON 键带引号冒号后空格 / tab 分隔 / 多空白分隔 / 引号包裹带空格值 5 条 +
+  落盘连续失败停用后环形缓冲完整且留标记 / 瞬时失败退避恢复 / 并发 Flush+Append 行不丢不重 3 条）。
+- 编译门：`dotnet build src/BBDownHelper -c Release` **0 Warning 0 Error**。
+- 发布：`dotnet publish` 参数沿用（Release / win-x64 / self-contained / PublishSingleFile /
+  EnableCompressionInSingleFile / IncludeNativeLibrariesForSelfExtract）；
+  产出 **BBDownHelper-v3.9.exe**，45,678,698 字节；内部程序集版本 3.9.0；对外发布号仍为 v1.0.3。
+
+### v3.9 未验证范围（如实说明）
+
+- dotnet test / build / publish 均在 Linux 侧交叉验证；EXE 未在 Windows 实机运行。
+- 打码按「命中键名后的值」规则工作，无法保证覆盖一切书写形态（如键名被变形拼写）；
+  导出文案已如实注明，发出前仍需用户自行过目。
+- P3-1～P3-4（取消弹窗误标、CrashHandler 哨兵、登录回执假阳性、ErrorMapper 宽松子串）
+  按红队建议记入待办，本批未动。
+
+
+## v4.0（v1.0.4 批次 3：界面结构与交互体验 R3.1~R3.13 + 可达性基线）
+
+范围：批次3任务书 R3.1~R3.13 + 可达性基线；批次1/2 已定型机制（进程槽/取消/NetFacade 冷却/
+预览竞态 GenerationGate+DebounceGate）只调用不重构；批次2 遗留 P3-1～P3-4 记待办不在本批。
+基线 v3.9 = 350 测试；对外发布号 AppVersion.Release 仍 1.0.3 不动，内部程序集版本升至 4.0.0。
+
+- R3.1 固定底部操作条（MainWindow.axaml Grid *,Auto）：开始按钮 + 登录区 + 进度条 + 状态文案
+  常驻底栏不随日志滚动；右下角版本角标撤下（版本号只在标题栏 AppVersion.WindowTitle）。
+- R3.2 主按钮层级：开始独占主色（#005A9E，对比度 7.10）；下载中原地同位切换为红色
+  「取消下载」（#A4262C，7.26），独立取消按钮撤下；OnStartButton 统一路由（点击/Enter/Alt+S）；
+  下载中登录/浏览降次级禁用（SetSecondaryEnabled），结束按互斥策略恢复。
+- R3.3 批量进度（Core/ProgressTracker.cs 纯逻辑）：锚定 BBDown-fixed Program.cs 日志口径——
+  「共计 N 个分P」「开始解析P{i}: ... (n of N)」「下载P{i}完毕」「P{i}: [cid] [title] [dur]」
+  「任务完成」；Done 以解析序号推进为准（跳过条目无完毕行）；界面显示
+  「已完成 x/N · 正在下载：<标题>」；进度条由 x/N（条目完成度）自驱动（helper 必然重定向
+  fork 输出，fork 在重定向下不输出百分比行，PercentRx 兜底仅在可见百分比行时生效）。
+- R3.3 补充（重定向下进度条的如实口径，不暗示有百分比）：helper 以隐藏子进程运行 BBDown 时
+  `RedirectStandardOutput = true`，而 fork 的 ProgressBar 在 Console.IsOutputRedirected 为真时
+  既不启动刷新定时器（ProgressBar.cs L44）、也在 UpdateText 首行直接 return（L115）；
+  fork 全树唯一输出进度百分比文本的位置（ProgressBar.cs L96-99）因此永不落地，
+  日志里不会出现由进度条输出的百分比行（aria2 的 `403MiB`、`(26%)`、`x/N` 一类文本不属于进度条百分比行，仍可能出现）。据此各场景的实际表现（逐行复刻渲染路径实测）：
+  单P 视频（fork 打「共计 1 个分P」，Total=1 不构成批量）与多P 全选的批量模式均符合预期——
+  前者全程不确定态、结束置 100%，后者按 x/N 逐条推进到 100%。
+  -p 只选一个分P（已修复）：fork 先打过滤前的「共计 12 个分P」（12>1 使 Total 一度为 12、
+  IsBatch 为真），随后打过滤后的「(1 of 1)」把 Total 覆盖为 1、IsBatch 转假。
+  进度条落值统一由 Core.ProgressBarPolicy.Decide 判定、由 Core.ProgressBarPresenter 落笔：
+  非批量一律返回不确定态，且「定值 → 不确定态」这次状态切换本身计为一次必须落地的写入
+  （ProgressBarPresenter.Apply 的 Changed=true），界面据此把 IsIndeterminate 写回 true，
+  先前的 0% 定值不会残留。界面剩余的状态只有两种：下载期间不确定态动画，结束时由完成态
+  出口置 100%（成功）/ 归 0%（失败或取消）。界面侧不再直接读 OverallPercent，也不再自行
+  判 IsBatch 分支（MainWindow.RenderLogLines 统一走 Decide + Presenter）。
+  该落值判定与写入端均可用例单独驱动（单视频/单个分P 不定态、尚未拿到计数、批量 x/N、
+  可见百分比兜底、定值转不定态的写入、-p 单分P 真实日志行端到端，共 14 条，
+  tests/BBDownHelper.Core.Tests/FixBatchTests.cs）。注意：ProgressBarPresenter 是纯逻辑，
+  用例覆盖的是「界面该写入什么」，Avalonia 控件属性本身的赋值不参与单测。
+  本批后测试门 435/435 通过。
+- R3.4 拖拽支持：窗口 AllowDrop + DragOver/Drop，放下文本经 InputRecognizer.ExtractToken
+  提取链接/BV 号填入输入框并触发识别；下载中不接。
+- R3.5 Enter 快捷键：InputBox AcceptsReturn=False，回车走 OnStartButton
+  （识别中/文本不一致先触发识别，多候选先选人——OnStart 双保险沿用）。
+- R3.6 预览卡分P勾选（Core/PageSelectionPolicy.cs 纯逻辑）：多P/多集预览卡展开勾选行，
+  默认全选；勾选 ⇄ 选集文本双向同步（_pageSyncing 递归守卫），部分选压缩连段（1-3,5），
+  手写非法/越界输入不动勾选；选择结果经 PageBox 进入 CommandBuilder -p 参数。
+- R3.7~R3.9 预览卡类型扩展（BiliProbe + PreviewService）：番剧 pgc view/web/season
+  （ss→season_id / ep→ep_id，root result）、课程 pugv view/web/season（root data，
+  ep 链接取不到 season 静默 null 走降级）、收藏夹 x/v3/fav/folder/info?media_id=
+  （data null 静默）；view 接口补 pages[].part 分P标题。
+- R3.10 预览降级 UX：支持预览的类型识别通过即骨架卡「正在获取预览…」；3 秒无结果
+  （ShowDegradedAfterDelayAsync）、取数失败（412 风控冷却/断网/其他）换降级提示
+  「预览没加载出来，不影响下载，可直接点『开始下载』」，按 InRiskCooldown/LastNetworkFailed
+  归因文案；预览区不再静默空白（吸收 v3.7 R1.6 断网提示为归因分支之一）。
+- R3.11 AppConfig 扩展（沿用原子写 tmp+move、损坏静默回退）：SaveDir（空串归一 null）+
+  Quality/Encoding/Danmaku（白名单回退）+ MultiThread/AudioOnly/CoverOnly/SubOnly/
+  DelayPerPage/SaveArchives 全持久化；启动 RestoreOptionsFromConfig 恢复（_restoringConfig
+  守卫恢复期间不回写）；InfoBox 不持久（会话级模式，注释文档化）；保存目录失效回退程序目录
+  并记日志；首启（无 SaveDir 或失效）亮引导条「用『下载』文件夹 / 自己浏览选择」。
+- R3.12 登录态三态（Core/LoginStatePolicy.cs 纯逻辑）：未登录(灰 #606060)/已登录(绿 #107C10)/
+  登录失效(橙 #B54708)，颜色点+文案+登录按钮文案（失效→「重新登录」）；
+  归并=凭据文件 × 探测结果；启动后台 nav 接口轻量探测（不阻塞、失败静默保持二态）；
+  登录回执（扫码进程退出凭据存在→已登录）与下载失败信号（ErrorMapper.IsLoginRelated
+  命中 403/需要登录/未登录/凭据/cookie/付费 → 标记失效）联动刷新。
+- R3.13 UP 主链路（Core/GeneratorLink.cs 纯逻辑）：UP 导出清单成功 →
+  「打开清单所在文件夹」「打开批量生成器」入口；生成器经 file URI + #up=<url-encoded>
+  预填本次 UP 主链接；生成器缺失/打不开浏览器有明确兜底文案。
+- 可达性基线（架构 §13）：主操作区文字对比度 ≥4.5:1（Python 实测：#005A9E 7.10 / #A4262C 7.26 /
+  #107C10 5.37 / #B54708 5.43 / #606060 6.29 / #8F5A00 5.78 替换 #CC8800 2.96 /
+  #C92A2A 5.46 替换 #E05555 3.75 / #00567A 8.04 替换 #3385AD 4.12 / #B3261E 6.54）；
+  提示文字 ≥12px；按钮最小点击高度 ≥32px（主按钮 40）；主控件 AutomationProperties.Name；
+  键盘 Alt+S 开始/取消、Alt+L 登录、Alt+B 浏览 + Tab 走通 + 回车开始。
+- 测试门：`dotnet test tests/BBDownHelper.Core.Tests` **435/435 通过**（429 + 6 条本批新增）
+  = 421（= 350 基线 + 59 + 修复批 12）+ 8 条进度条落值决策补修用例（单视频不定态 / 尚未拿到计数
+  不定态 / -p 单选一个分P 不定态 / 批量 x/N 两档 / Done 超 Total 封顶 100 / 可见百分比单条 /
+  批量取较大防回跳 / -p 单分P 先落 0% 定值的现状刻画）+ 6 条本批界面落值端用例
+  （批量转单条的序列返不定态 / 单视频初始不重复写 / 批量推进与去重 / 定值转不定态后再回定值必重写 /
+  -p 单分P 真实 fork 日志行端到端 / 多P 全选端到端不退化）。
+  先红后绿：上一批 8 条在纯函数 API 缺失时 8 处 CS0103（旧口径下 3 条断言红）；本批 6 条在
+  ProgressBarPresenter 缺失时 4 处 CS0246，按上一批旧口径（只按 Percent 落定值、IsBatch 转假后不再写）
+  实现时 4 条断言红，改为「非批量 ⇒ 不确定态、状态切换必写」后 6/6 通过。
+  全部用例见 tests/BBDownHelper.Core.Tests/FixBatchTests.cs。
+- 编译门：`dotnet build src/BBDownHelper -c Debug` **0 Warning 0 Error**。
+
+### v4.0 未验证范围（如实说明）
+
+- 沙箱无 Windows GUI：界面类（固定底栏视觉、两态按钮配色、拖拽手感、回车/Alt 快捷键、
+  分P勾选行交互、骨架卡/降级提示视觉、三态颜色点、首启引导条）以代码级 + 纯逻辑测试验收，
+  未实机目视验证。
+- 预览卡番剧/课程/收藏夹接口返回结构以样本 JSON（2026-11-05 实网抓取）锚定；
+  课程 ep 链接（/cheese/play/epN）pugv season 接口取不到，静默走降级提示（不阻塞下载）。
+- 生成器 html 改动（#up= 预填 / 04 拿走命令 / 折叠默认态 / 程序位置二选一卡片）以 Node
+  断言验证脚本逻辑，未在浏览器实机点开验证视觉效果。
+- P3 待办沿用：批次2 遗留 P3-1～P3-4 不在本批。

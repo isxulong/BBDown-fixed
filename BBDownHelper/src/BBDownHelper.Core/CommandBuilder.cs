@@ -104,10 +104,17 @@ public static class CommandBuilder
         if (s.Equals("LAST", StringComparison.OrdinalIgnoreCase)) return true;
         foreach (var part in s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            if (InputRecognizer.DigitsRegex().IsMatch(part)) continue;
+            if (InputRecognizer.DigitsRegex().IsMatch(part))
+            {
+                if (part.Length > PageSelectionPolicy.MaxPageDigits) return false;
+                continue;
+            }
             var seg = part.Split('-', StringSplitOptions.TrimEntries);
             if (seg.Length == 2 && InputRecognizer.DigitsRegex().IsMatch(seg[0]) && InputRecognizer.DigitsRegex().IsMatch(seg[1]))
+            {
+                if (seg[0].Length > PageSelectionPolicy.MaxPageDigits || seg[1].Length > PageSelectionPolicy.MaxPageDigits) return false;
                 continue;
+            }
             return false;
         }
         return s.Length > 0;

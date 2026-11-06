@@ -38,6 +38,20 @@ public static class CoreLayout
     public static string UpdateCheckCachePath(string baseDir) =>
         Path.Combine(baseDir, CoreDirName, UpdateCheckCacheName);
 
+    /// <summary>v3.8（R2.7/R2.8）：滚动日志目录名（core\logs）。</summary>
+    public const string LogDirName = "logs";
+
+    /// <summary>v3.8（R2.4/R2.7 配置持久化）：core\.config.json 文件名。</summary>
+    public const string ConfigFileName = ".config.json";
+
+    /// <summary>v3.8：core\logs 完整路径——日常滚动日志与崩溃现场的统一落点。</summary>
+    public static string LogDir(string baseDir) =>
+        Path.Combine(baseDir, CoreDirName, LogDirName);
+
+    /// <summary>v3.8：core\.config.json 完整路径——界面配置持久化载体。</summary>
+    public static string ConfigPath(string baseDir) =>
+        Path.Combine(baseDir, CoreDirName, ConfigFileName);
+
     /// <summary>
     /// 迁移计划（纯函数，可单测）：顶层存在、且 core\ 里还没有的数据文件才搬；
     /// core\ 已有的不覆盖——不能拿顶层旧凭据盖掉 core\ 里的新凭据。

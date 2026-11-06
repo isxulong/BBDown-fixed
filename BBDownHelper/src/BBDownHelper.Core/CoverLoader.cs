@@ -10,29 +10,50 @@ namespace BBDownHelper.Core;
 /// </summary>
 public sealed class CoverLoader
 {
+    private readonly NetFacade _facade;
+
+    /// <summary>
+    /// v3.7：经 NetFacade 注入（生产注入 NetFacade.Shared，412 冷却全局共享）。
+    /// 默认新建独立实例，保持既有单测互不影响。
+    /// </summary>
+    public CoverLoader(NetFacade? facade = null) => _facade = facade ?? new NetFacade();
+
     /// <summary>可注入 mock（单测用）。参数：url, ct。返回图片字节；失败/取消返回 null。</summary>
     public Func<string, CancellationToken, Task<byte[]?>>? GetBytesOverride { get; set; }
 
-    /// <summary>底层 HTTP 发送可注入（单测取消/非成功路径用）；生产为 null 走真实 HttpClient。</summary>
-    internal Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? SendOverride { get; set; }
+    private Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? _sendOverrideLegacy;
 
-    /// <summary>下载封面字节。空 URL / 已取消直接返回 null；非成功状态码返回 null；成功返回图片字节。</summary>
+    /// <summary>
+    /// 底层 HTTP 发送可注入（单测取消/非成功路径用）；生产为 null 走真实 HttpClient。
+    /// v3.7 起转发到 NetFacade.SendOverride（旧两参签名适配为门面三参签名）。
+    /// </summary>
+    internal Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>? SendOverride
+    {
+        get => _sendOverrideLegacy;
+        set
+        {
+            _sendOverrideLegacy = value;
+            _facade.SendOverride = value is null ? null : (req, _, ct) => value(req, ct);
+        }
+    }
+
+    /// <summary>下载封面字节。空 URL / 已取消 / 412 冷却期直接返回 null；非成功状态码返回 null；成功返回图片字节。</summary>
     public async Task<byte[]?> GetCoverBytesAsync(string url, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(url) || ct.IsCancellationRequested) return null;
         if (GetBytesOverride is not null) return await GetBytesOverride(url, ct);
+        // v3.7：412 冷却期内静默降级（不发请求，保持占位色块，不抛出）。
+        if (_facade.InRiskCooldown) return null;
         try
         {
-            using var handler = new HttpClientHandler { AllowAutoRedirect = true, UseCookies = false };
-            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             // 与识别探测同一匿名请求口径：固定 UA + Referer（B 站图床 hdslb.com 校验 Referer 防盗链）
-            req.Headers.TryAddWithoutValidation("User-Agent", BiliApiProbe.UserAgent);
+            // v3.7：UA 唯一来源改为 NetFacade.UserAgent（BiliApiProbe.UserAgent 是其别名）。
+            req.Headers.TryAddWithoutValidation("User-Agent", NetFacade.UserAgent);
             req.Headers.TryAddWithoutValidation("Referer", "https://www.bilibili.com/");
-            using var resp = SendOverride is not null
-                ? await SendOverride(req, ct)
-                : await client.SendAsync(req, ct);
-            if (!resp.IsSuccessStatusCode) return null;
+            // v3.7：超时随门面统一为 15s（原 10s 为本组件单独口径，见交付说明）。
+            using var resp = await _facade.SendAsync(req, NetPolicy.Default, ct);
+            if (resp is null || !resp.IsSuccessStatusCode) return null;
             return await resp.Content.ReadAsByteArrayAsync(ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { return null; }

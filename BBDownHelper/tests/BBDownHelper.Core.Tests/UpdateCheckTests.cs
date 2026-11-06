@@ -17,9 +17,9 @@ public class UpdateCheckTests
     [Fact]
     public void AppVersion_SingleSource_Pinned()
     {
-        Assert.Equal("1.0.3", AppVersion.Release);
-        Assert.Equal("v1.0.3", AppVersion.ReleaseTag);
-        Assert.Equal("BBDown-fixed 下载助手 v1.0.3", AppVersion.WindowTitle);
+        Assert.Equal("1.0.4", AppVersion.Release);
+        Assert.Equal("v1.0.4", AppVersion.ReleaseTag);
+        Assert.Equal("BBDown-fixed 下载助手 v1.0.4", AppVersion.WindowTitle);
         Assert.Equal(AppVersion.ReleaseTag, AppVersion.CornerLabel);
     }
 

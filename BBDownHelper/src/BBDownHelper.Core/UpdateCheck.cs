@@ -127,7 +127,16 @@ public sealed class UpdateChecker
 {
     public const string LatestReleaseApi = "https://api.github.com/repos/isxulong/BBDown-fixed/releases/latest";
 
-    private const int TimeoutSeconds = 5;
+    /// <summary>v3.5 规格明文：检查更新请求超时 5s（不经统一 15s 默认档）。internal 供测试断言口径一致。</summary>
+    internal const int TimeoutSeconds = 5;
+
+    private readonly NetFacade _facade;
+
+    /// <summary>
+    /// v3.7：经 NetFacade 注入（生产注入 NetFacade.Shared，412 冷却全局共享）。
+    /// 默认新建独立实例，保持既有单测互不影响。
+    /// </summary>
+    public UpdateChecker(NetFacade? facade = null) => _facade = facade ?? new NetFacade();
 
     /// <summary>GET 返回 body；可注入 mock。参数：url。</summary>
     public Func<string, Task<string?>>? GetStringOverride { get; set; }
@@ -153,7 +162,8 @@ public sealed class UpdateChecker
             if (cached is not null && UpdateCheckLogic.IsCacheFresh(cached.CheckedAtUtc, NowUtc()))
                 return UpdateCheckLogic.ShouldPrompt(currentTag, cached.Info.LatestTag) ? cached.Info : null;
 
-            // 2) 请求 latest release
+            // 2) 请求 latest release（v3.7：412 冷却期内静默降级，不发请求、不写缓存，下次启动再试）
+            if (_facade.InRiskCooldown) return null;
             string? json = GetStringOverride is not null
                 ? await GetStringOverride(LatestReleaseApi)
                 : await FetchAsync();
@@ -167,17 +177,18 @@ public sealed class UpdateChecker
         catch { return null; }   // 兜底：任何环节抛异常都按「无新版本」处理
     }
 
-    private static async Task<string?> FetchAsync()
+    private async Task<string?> FetchAsync()
     {
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(TimeoutSeconds) };
             using var req = new HttpRequestMessage(HttpMethod.Get, LatestReleaseApi);
-            // GitHub API 要求 UA；沿用探测同一匿名 UA 口径
-            req.Headers.TryAddWithoutValidation("User-Agent", BiliApiProbe.UserAgent);
+            // GitHub API 要求 UA；v3.7 起 UA 唯一来源为 NetFacade.UserAgent（BiliApiProbe.UserAgent 是其别名）
+            req.Headers.TryAddWithoutValidation("User-Agent", NetFacade.UserAgent);
             req.Headers.TryAddWithoutValidation("Accept", "application/vnd.github+json");
-            using var resp = await client.SendAsync(req);
-            if (!resp.IsSuccessStatusCode) return null;
+            // v3.7：改经 NetFacade 共享 HttpClient；5s 超时按 v3.5 规格以 NetPolicy 显式传入
+            using var resp = await _facade.SendAsync(
+                req, new NetPolicy(TimeSpan.FromSeconds(TimeoutSeconds), true), CancellationToken.None);
+            if (resp is null || !resp.IsSuccessStatusCode) return null;
             return await resp.Content.ReadAsStringAsync();
         }
         catch { return null; }   // 超时/被墙/断网：静默

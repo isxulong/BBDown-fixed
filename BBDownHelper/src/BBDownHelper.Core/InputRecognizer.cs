@@ -38,6 +38,47 @@ public static partial class InputRecognizer
         return null;
     }
 
+    // ---------- v3.7 R1.5：完整性本地预校验（半成品输入不发联网请求） ----------
+
+    /// <summary>
+    /// b23 短链路径达到该长度才视为「凑齐」。真实短链路径普遍 6~7 位；阈值取 4 是
+    /// 刻意保守——宁可对偏短的真实短链照常发请求（粘贴场景行为不变），也不误伤可用输入；
+    /// 手敲场景下 1~3 位的中途态均被拦截（零请求）。
+    /// </summary>
+    public const int B23CompletePathLength = 4;
+
+    /// <summary>
+    /// 输入是否「似完整可联网识别」的本地形态预校验（纯函数，无网络）。
+    /// 手敲半成品（典型：b23 短链逐字符输入，400ms 防抖一到就发一次 HTTP 跳转解析，
+    /// 放大风控暴露）时返回 false——调用方只走本地分支，不发任何 HTTP；
+    /// 粘贴场景文本一次到位，判定结果与旧行为一致（完整链接/BV/数字 → true）。
+    /// 判据（命中任一即完整）：
+    ///  - b23.tv/ 路径 ≥ B23CompletePathLength（=4，不足视为半成品）；
+    ///  - 含完整 BV 号 / av 号；
+    ///  - 含 bilibili.com/ 带路径的完整 URL；
+    ///  - 纯数字 ≥ 4 位（探测决策树入口，粘贴行为不变）。
+    /// 全角数字、空文本、无法提取任何 token 的文本 → false。
+    /// </summary>
+    public static bool LooksComplete(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+
+        // b23.tv 短链（带不带协议头都认）：路径凑齐才算完整
+        var b23 = B23TrackRegex().Match(text);
+        if (b23.Success)
+            return b23.Groups[1].Value.Length >= B23CompletePathLength;
+
+        if (BvSearchRegex().Match(text).Success) return true;
+        if (AvSearchRegex().Match(text).Success) return true;
+
+        var url = UrlRegex().Match(text);
+        if (url.Success)
+            return url.Value.Contains("bilibili.com/", StringComparison.OrdinalIgnoreCase);
+
+        if (BareNumberRegex().IsMatch(text)) return true;
+        return false;
+    }
+
     // ---------- 第 1 步：分类（命中即停） ----------
 
     /// <summary>对已提取的 token 分类。不做任何网络请求（b23.tv / 裸数字由上层探测后再走这里）。</summary>
@@ -200,12 +241,28 @@ public static partial class InputRecognizer
 
     // ---------- ?p=N 提取 ----------
 
-    /// <summary>提取 URL 上的 p 参数（映射为 -p N，不留在 URL 里）。</summary>
+    /// <summary>提取 URL 上的 p 参数（映射为 -p N，不留在 URL 里）。P1：超长数字（>MaxPageDigits 位）视为非法，不写入 -p。</summary>
     public static (string? page, string urlWithoutPage) ExtractPageParam(string url)
     {
         string? p = GetQueryValue(url, "p");
-        if (p is null || !DigitsRegex().IsMatch(p)) return (null, url);
+        if (p is null || p.Length > PageSelectionPolicy.MaxPageDigits || !DigitsRegex().IsMatch(p)) return (null, url);
         return (p, url);
+    }
+
+    // ---------- v4.0（R3.7-9）：番剧/课程链接的 ep/ss ID 提取（预览卡取数用） ----------
+
+    /// <summary>
+    /// 从已重建的 bangumi/play 或 cheese/play 链接里提取 ep/ss ID。
+    /// isEp=true 为 ep（单集），false 为 ss（整季）。匹配失败或数字非法返回 false。
+    /// </summary>
+    public static bool TryExtractEpSsId(string url, out bool isEp, out long id)
+    {
+        isEp = false; id = 0;
+        var m = EpSsInPath().Match(url);
+        if (!m.Success) return false;
+        if (!long.TryParse(m.Groups[2].Value, out id) || id <= 0) return false;
+        isEp = m.Groups[1].Value == "ep";
+        return true;
     }
 
     // ---------- 白名单 URL 重建（安全红线） ----------
@@ -342,7 +399,7 @@ public static partial class InputRecognizer
     [GeneratedRegex(@"/video/av([0-9]+)", RegexOptions.IgnoreCase)]
     private static partial Regex AvInUrlOrBare();
 
-    [GeneratedRegex(@"/(ep|ss)[0-9]+")]
+    [GeneratedRegex(@"/(ep|ss)([0-9]+)")]
     private static partial Regex EpSsInPath();
 
     [GeneratedRegex(@"space\.bilibili\.com/([0-9]+)/lists/([0-9]+)")]
@@ -354,4 +411,9 @@ public static partial class InputRecognizer
     // v3.1 P3：短链判定锚定完整前缀，b23.tv.evil.com 之类仿冒域不再误判
     [GeneratedRegex(@"^https://b23\.tv/", RegexOptions.IgnoreCase)]
     private static partial Regex B23AnchorRegex();
+
+    // v3.7 R1.5：LooksComplete 用——抓 b23.tv/ 后面的路径段（可为空），判半成品；
+    // 仿冒域（b23.tv.evil.com）路径段以 . 开头不在 [A-Za-z0-9] 内，不会误判
+    [GeneratedRegex(@"b23\.tv/([A-Za-z0-9]*)", RegexOptions.IgnoreCase)]
+    private static partial Regex B23TrackRegex();
 }

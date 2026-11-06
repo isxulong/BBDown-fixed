@@ -239,9 +239,6 @@ public class PreviewTests
 
     [Theory]
     [InlineData(InputKind.UpSpace, "https://space.bilibili.com/123")]        // UP 主主页：沿用现有引导，不出卡
-    [InlineData(InputKind.Favorites, "https://space.bilibili.com/123/favlist?fid=1")]
-    [InlineData(InputKind.Bangumi, "https://www.bilibili.com/bangumi/play/ep123")]
-    [InlineData(InputKind.Cheese, "https://www.bilibili.com/cheese/play/ep1")]
     [InlineData(InputKind.Unknown, "")]
     public async Task GetPreview_OtherKinds_NullNoProbe(InputKind kind, string final)
     {

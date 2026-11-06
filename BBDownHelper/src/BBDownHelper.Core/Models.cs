@@ -59,6 +59,12 @@ public sealed class RecognitionResult
     /// <summary>裸数字多候选：必须弹窗让用户单选，禁止静默选第一个</summary>
     public bool NeedsUserChoice { get; set; }
 
+    /// <summary>
+    /// v3.7（R1.7）：合集/系列标题联网补全失败（网络原因）时置 true，
+    /// UI 显示灰字「没取到合集标题（网络原因），不影响下载」，不改变可用性。
+    /// </summary>
+    public bool ListInfoFailed { get; set; }
+
     public List<NumberCandidate> Candidates { get; set; } = new();
 
     /// <summary>提示/警告信息（展示给用户）</summary>
@@ -97,4 +103,10 @@ public sealed class VideoPreview
 
     /// <summary>true=接口明确 code != 0（视频不存在/已删除），UI 显示一句温和提示</summary>
     public bool NotFound { get; init; }
+
+    /// <summary>
+    /// v4.0（R3.6/R3.7-9）：分P/分集标题列表（单视频 pages[].part、番剧 episodes、课程 episodes）。
+    /// 供预览卡勾选行展示；合集/系列/收藏夹为空数组。数量可能与 PageCount 不一致时以本列表为准出勾选行。
+    /// </summary>
+    public IReadOnlyList<string> PageTitles { get; init; } = Array.Empty<string>();
 }

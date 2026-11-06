@@ -22,10 +22,24 @@ public sealed class RecognitionService
         // b23.tv：跟 302 解析后重新分类
         if (r.Kind == InputKind.ShortLink)
         {
+            // v3.7（R1.5）：半成品短链（还在输入/粘贴中途）不发联网请求，只走本地提示；
+            // 用户补全后防抖重识别会自动走正常解析。粘贴完整分享文案场景 LooksComplete=true，行为不变。
+            if (!InputRecognizer.LooksComplete(rawText))
+            {
+                r.Kind = InputKind.Unknown; r.KindName = "无法识别";
+                r.Message = "短链接看起来还没粘贴完整，完整粘贴后会自动识别。";
+                return r;
+            }
             string? finalUrl = await _probe.ResolveShortLinkAsync(token);
             if (finalUrl is null)
             {
-                r.Message = "短链接解析失败（可能是网络问题）。请在浏览器里打开这个短链接，再复制地址栏里的完整链接粘贴过来。";
+                // v3.7（R1.6）：断网归因单列——网络失败 / 风控冷却 / 其他，文案可区分
+                r.Kind = InputKind.Unknown; r.KindName = "无法识别";
+                r.Message = _probe.LastNetworkFailed
+                    ? "短链接解析失败：请检查网络连接后重试。也可以在浏览器里打开这个短链接，再复制地址栏里的完整链接粘贴过来。"
+                    : _probe.InRiskCooldown
+                        ? "短链接解析失败：触发了 B 站访问限制，请稍等约 1 分钟后再试。也可以在浏览器里打开这个短链接，再复制地址栏里的完整链接粘贴过来。"
+                        : "短链接解析失败（可能是网络问题）。请在浏览器里打开这个短链接，再复制地址栏里的完整链接粘贴过来。";
                 return r;
             }
             r = InputRecognizer.Classify(finalUrl);
@@ -40,7 +54,12 @@ public sealed class RecognitionService
             if (candidates.Count == 0)
             {
                 r.Kind = InputKind.Unknown; r.KindName = "无法识别";
-                r.Message = $"没认出数字 {token} 是什么。请粘贴完整链接或 BV 号。";
+                // v3.7（R1.6）：断网归因单列——网络失败 / 风控冷却 / 确实没认出，文案可区分
+                r.Message = _probe.LastNetworkFailed
+                    ? $"联网探测数字 {token} 失败：请检查网络连接后重试。也可以直接粘贴完整链接或 BV 号。"
+                    : _probe.InRiskCooldown
+                        ? $"联网探测数字 {token} 失败：触发了 B 站访问限制，请稍等约 1 分钟后再试。也可以直接粘贴完整链接或 BV 号。"
+                        : $"没认出数字 {token} 是什么。请粘贴完整链接或 BV 号。";
                 return r;
             }
             if (candidates.Count == 1)
@@ -93,13 +112,16 @@ public sealed class RecognitionService
         {
             string? sid = InputRecognizer.GetQueryValue(r.FinalInput, "sid")
                           ?? InputRecognizer.GetQueryValue(r.FinalInput, "business_id");
+            // sid 缺失/非法 = 没发起联网，不算「取标题失败」，不置 ListInfoFailed
             if (sid is null || !InputRecognizer.DigitsRegex().IsMatch(sid)) return;
             int type = r.Kind == InputKind.Series ? 5 : 8;
             var c = await _probe.ProbeMediaListAsync(long.Parse(sid), type, cookie);
-            if (c is null) return;
+            // v3.7（R1.7）：确实发起了联网补全但没取到 → 置标记，UI 显示
+            // 「没取到合集标题（网络原因），不影响下载」灰字，不改变可用性。
+            if (c is null) { r.ListInfoFailed = true; return; }
             r.Title = c.Title;
             r.MediaCount = c.MediaCount;
         }
-        catch { /* 探测失败不影响识别结果 */ }
+        catch { r.ListInfoFailed = true; /* 探测失败不影响识别结果，仅置标记供 UI 补一句说明 */ }
     }
 }

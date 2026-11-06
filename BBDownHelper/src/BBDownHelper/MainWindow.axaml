@@ -4,49 +4,103 @@
         Icon="avares://BBDownHelper/Assets/BBDownHelper.ico"
         Width="880" Height="780"
         MinWidth="760" MinHeight="640">
-  <!-- v3.5：窗口标题由后台代码设置（AppVersion.WindowTitle 单一来源），XAML 不再写死 -->
+  <!--
+    v3.5：窗口标题由后台代码设置（AppVersion.WindowTitle 单一来源），XAML 不写死。
+    v4.0（批次3 R3.1 / PM R3.1）：固定底部操作条——开始按钮 + 登录区 + 进度条 + 状态文案
+    常驻底栏（Grid Row=1），不随日志滚动消失；右下角版本角标撤下（版本号已在标题栏）。
+    可达性基线（架构 §13）：主操作区文字对比度 ≥4.5:1（白底实测：#005A9E 7.10、#A4262C 7.26、
+    #107C10 5.37、#B54708 5.43、#606060 6.29、#8F5A00 5.78、#C92A2A 5.46、#00567A 8.04）；
+    提示文字 ≥12px；按钮最小点击高度 ≥32px；主控件带 AutomationProperties.Name；
+    键盘：Tab 走通 + Alt+S 开始/取消、Alt+L 登录、Alt+B 浏览、输入框回车=识别/开始（R3.5）。
+  -->
   <Grid RowDefinitions="*,Auto">
   <ScrollViewer Grid.Row="0">
     <StackPanel Margin="18" Spacing="10">
 
       <!-- v3.5：发现新版本提示条（启动后异步检查 GitHub latest release，失败静默不显示） -->
       <Border x:Name="UpdateBanner" IsVisible="False" Padding="10" CornerRadius="8"
-              Background="#11CC8800" BorderBrush="#44CC8800" BorderThickness="1">
+              Background="#118F5A00" BorderBrush="#448F5A00" BorderThickness="1">
         <StackPanel Orientation="Horizontal" Spacing="10">
           <TextBlock x:Name="UpdateBannerText" VerticalAlignment="Center" FontSize="13"
-                     Foreground="#CC8800" FontWeight="SemiBold"/>
-          <Button x:Name="UpdateBannerBtn" Content="点此查看下载" Padding="12,4" FontSize="12"/>
+                     Foreground="#8F5A00" FontWeight="SemiBold"/>
+          <Button x:Name="UpdateBannerBtn" Content="点此查看下载" Padding="12,4" FontSize="12" MinHeight="32"
+                  AutomationProperties.Name="查看新版本下载页"/>
         </StackPanel>
       </Border>
 
-      <TextBlock Text="把 B 站链接粘贴到下面的框里，会自动识别类型；选好需求后点「开始下载」即可。"
+      <!-- v3.8：一次性黄条提醒（R2.11 安放路径自检 / R2.3 保存盘低空间） -->
+      <Border x:Name="WarnBanner" IsVisible="False" Padding="10" CornerRadius="8"
+              Background="#118F5A00" BorderBrush="#448F5A00" BorderThickness="1">
+        <TextBlock x:Name="WarnBannerText" FontSize="13" Foreground="#8F5A00" TextWrapping="Wrap"/>
+      </Border>
+
+      <!-- v4.0（R3.11 / PM R3.10）：首启引导选保存目录（config 里没有 SaveDir 时显示一次） -->
+      <Border x:Name="FirstRunDirBanner" IsVisible="False" Padding="10" CornerRadius="8"
+              Background="#0A005A9E" BorderBrush="#33005A9E" BorderThickness="1">
+        <StackPanel Spacing="6">
+          <TextBlock FontSize="13" TextWrapping="Wrap"
+                     Text="首次使用：先选一个下载保存位置（建议用系统「下载」文件夹，找起来方便）。以后下载都默认存到那里，重启也记得。"/>
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <Button x:Name="UseDownloadsBtn" Content="用「下载」文件夹" Padding="14,4" MinHeight="32"
+                    AutomationProperties.Name="使用系统下载文件夹"/>
+            <Button x:Name="FirstRunBrowseBtn" Content="自己浏览选择…" Padding="12,4" MinHeight="32"
+                    AutomationProperties.Name="浏览选择保存文件夹"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+
+      <TextBlock Text="把 B 站链接粘贴到下面的框里，会自动识别类型；选好需求后点底部「开始下载」即可。"
                  TextWrapping="Wrap" FontSize="14"/>
 
-      <!-- 输入 -->
-      <TextBox x:Name="InputBox" AcceptsReturn="True" Height="64" TextWrapping="Wrap"
-               Watermark="粘贴链接 / BV号 / av号 / 分享文字，粘贴后自动识别"/>
+      <!-- 输入（R1.9：placeholder 写明整段分享文字可直接粘贴；v4.0 R3.4 支持拖拽、R3.5 回车开始） -->
+      <TextBox x:Name="InputBox" AcceptsReturn="False" Height="40" TextWrapping="Wrap"
+               AutomationProperties.Name="链接输入框（可粘贴或直接拖入链接，回车开始）"
+               Watermark="把 B 站分享链接或 BV 号粘贴到这里，整段分享文字直接贴也行；也可以把链接拖进窗口"/>
 
-      <!-- v3.4 预览卡：识别后自动联网取标题+封面（纯增强，失败静默不显示） -->
+      <!-- v4.0（R3.10 / PM R3.7）：识别通过即骨架卡「正在获取预览…」——预览区不再静默空白 -->
+      <Border x:Name="PreviewSkeleton" IsVisible="False" Padding="10" CornerRadius="8"
+              Background="#0A000000" BorderBrush="#22000000" BorderThickness="1">
+        <TextBlock Text="正在获取预览…" FontSize="12" Foreground="#606060"/>
+      </Border>
+
+      <!-- v3.4 预览卡：识别后自动联网取标题+封面。v4.0：类型扩展（番剧/课程/收藏夹）+ 分P勾选行 -->
       <Border x:Name="PreviewCard" IsVisible="False" Padding="10" CornerRadius="8"
               Background="#11008866" BorderBrush="#33008866" BorderThickness="1">
-        <Grid ColumnDefinitions="120,*">
-          <Panel Width="120" Height="75" VerticalAlignment="Top">
-            <Border x:Name="CoverPlaceholder" Background="#22008866" CornerRadius="4"/>
-            <Image x:Name="CoverImage" Stretch="UniformToFill"/>
-          </Panel>
-          <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Top" Margin="12,2,0,0">
-            <TextBlock x:Name="PreviewKindText" FontSize="11" Foreground="#CC006699" FontWeight="SemiBold"/>
-            <TextBlock x:Name="PreviewTitleText" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"
-                       MaxLines="2" TextTrimming="CharacterEllipsis"/>
-            <TextBlock x:Name="PreviewUpText" FontSize="12" Opacity="0.75"/>
+        <StackPanel Spacing="8">
+          <Grid ColumnDefinitions="120,*">
+            <Panel Width="120" Height="75" VerticalAlignment="Top">
+              <Border x:Name="CoverPlaceholder" Background="#22008866" CornerRadius="4"/>
+              <Image x:Name="CoverImage" Stretch="UniformToFill"/>
+            </Panel>
+            <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Top" Margin="12,2,0,0">
+              <TextBlock x:Name="PreviewKindText" FontSize="12" Foreground="#00567A" FontWeight="SemiBold"/>
+              <TextBlock x:Name="PreviewTitleText" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap"
+                         MaxLines="2" TextTrimming="CharacterEllipsis"/>
+              <TextBlock x:Name="PreviewUpText" FontSize="12" Foreground="#404040"/>
+            </StackPanel>
+          </Grid>
+          <!-- v4.0（R3.6 / PM R3.5）：多P/多集时展开勾选行，点选回写选集框（默认全选） -->
+          <StackPanel x:Name="PageSelectRow" IsVisible="False" Spacing="4">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock VerticalAlignment="Center" FontSize="12"
+                         Text="选择要下载的分P（默认全选；也可直接在下方选集框手写 3,5 这类写法）："/>
+              <Button x:Name="PageSelectAllBtn" Grid.Column="1" Content="全选" Padding="12,2"
+                      FontSize="12" MinHeight="28" AutomationProperties.Name="分P全选"/>
+            </Grid>
+            <WrapPanel x:Name="PageSelectPanel"/>
           </StackPanel>
-        </Grid>
+        </StackPanel>
       </Border>
 
       <!-- v3.4：视频不存在/已删除的温和提示（不报错、不阻塞下载流程） -->
-      <TextBlock x:Name="PreviewNotFoundText" IsVisible="False" FontSize="12" Foreground="#CC8800"
+      <TextBlock x:Name="PreviewNotFoundText" IsVisible="False" FontSize="12" Foreground="#8F5A00"
                  TextWrapping="Wrap"
                  Text="这个视频可能不存在或已删除。预览仅供参考，不影响你点「开始下载」重试。"/>
+
+      <!-- v4.0（R3.10 / PM R3.7）：预览降级提示——3 秒无结果 / 412 风控 / 断网，文案由代码归因填充
+           （吸收 v3.7 R1.6 的 PreviewNetFailText：断网是其中一个归因分支） -->
+      <TextBlock x:Name="PreviewDegradedText" IsVisible="False" FontSize="12" Foreground="#606060"
+                 TextWrapping="Wrap"/>
 
       <!-- 识别结果卡片 -->
       <Border x:Name="ResultCard" IsVisible="False" Padding="12" CornerRadius="8"
@@ -54,26 +108,38 @@
         <StackPanel Spacing="4">
           <TextBlock x:Name="TypeText" FontWeight="Bold" FontSize="15"/>
           <TextBlock x:Name="TitleText" TextWrapping="Wrap" IsVisible="False"/>
-          <TextBlock x:Name="LinkText" TextWrapping="Wrap" FontSize="12" Opacity="0.8"/>
-          <TextBlock x:Name="MsgText" TextWrapping="Wrap" Foreground="#CC8800" IsVisible="False"/>
+          <TextBlock x:Name="LinkText" TextWrapping="Wrap" FontSize="12" Foreground="#404040"/>
+          <TextBlock x:Name="MsgText" TextWrapping="Wrap" Foreground="#8F5A00" IsVisible="False"/>
+          <!-- v3.7（R1.7）：合集/系列标题联网补全失败的灰字说明（不影响下载） -->
+          <TextBlock x:Name="ListInfoNoteText" IsVisible="False" FontSize="12" Foreground="#606060"
+                     TextWrapping="Wrap"
+                     Text="没取到合集标题（网络原因），不影响下载"/>
+          <!-- v3.7（R1.4）：识别失败态的「重新识别」按钮（对当前输入框文本直接重跑） -->
+          <Button x:Name="RetryBtn" Content="重新识别" IsVisible="False"
+                  HorizontalAlignment="Left" Padding="16,4" FontSize="13" MinHeight="32"
+                  AutomationProperties.Name="重新识别"/>
         </StackPanel>
       </Border>
 
       <!-- 多候选选择 -->
       <Border x:Name="CandidateCard" IsVisible="False" Padding="12" CornerRadius="8"
-              Background="#22884400" BorderBrush="#CC8800" BorderThickness="1">
+              Background="#22884400" BorderBrush="#8F5A00" BorderThickness="1">
         <StackPanel Spacing="6">
           <TextBlock Text="这个数字对应到多个内容，请选择一个（不会替你默认选）：" FontWeight="Bold"/>
           <StackPanel x:Name="CandidateList" Spacing="4"/>
-          <Button x:Name="CandidateOkBtn" Content="就用选中的这个" HorizontalAlignment="Left"/>
+          <!-- v3.7（R1.8）：裸数字候选卡引导小字 -->
+          <TextBlock FontSize="12" Foreground="#606060" Text="选一个内容后，确认按钮才可点"/>
+          <Button x:Name="CandidateOkBtn" Content="就用选中的这个" HorizontalAlignment="Left"
+                  MinHeight="32" AutomationProperties.Name="确认候选选择"/>
         </StackPanel>
       </Border>
 
       <!-- 只解析（下载设置区最顶部，对齐生成器 v5） -->
       <Border Padding="12" CornerRadius="8" BorderBrush="#330000AA" BorderThickness="1">
         <StackPanel Spacing="4">
-          <CheckBox x:Name="InfoBox" Content="只解析，不下载（先看看链接里有什么）" FontWeight="Bold"/>
-          <TextBlock x:Name="InfoHintText" IsVisible="False" Foreground="#CC8800" FontSize="12"
+          <CheckBox x:Name="InfoBox" Content="只解析，不下载（先看看链接里有什么）" FontWeight="Bold"
+                    MinHeight="28"/>
+          <TextBlock x:Name="InfoHintText" IsVisible="False" Foreground="#8F5A00" FontSize="12"
                      TextWrapping="Wrap"
                      Text="已开启只解析：下面的下载设置全部不生效（将执行 BBDown -info，只列出信息不下载）。取消勾选后立即恢复。"/>
         </StackPanel>
@@ -83,18 +149,18 @@
       <Border Padding="12" CornerRadius="8" BorderBrush="#330000AA" BorderThickness="1">
         <StackPanel Spacing="6">
           <TextBlock Text="画质与编码" FontWeight="Bold"/>
-          <CheckBox x:Name="MtBox" Content="多线程加速（推荐保持勾选）" IsChecked="True"/>
+          <CheckBox x:Name="MtBox" Content="多线程加速（推荐保持勾选）" IsChecked="True" MinHeight="28"/>
           <StackPanel Spacing="2">
-            <RadioButton x:Name="QAuto" GroupName="q" Content="自动最高画质（推荐）" IsChecked="True"/>
-            <RadioButton x:Name="QIa" GroupName="q" Content="下载前让我手动选画质（运行时列清单）"/>
-            <RadioButton x:Name="Q1080" GroupName="q" Content="1080P 优先"/>
-            <RadioButton x:Name="Q4k" GroupName="q" Content="4K 优先（需先扫码登录大会员账号）"/>
-            <RadioButton x:Name="Q480" GroupName="q" Content="省流量优先（480P/360P）"/>
+            <RadioButton x:Name="QAuto" GroupName="q" Content="自动最高画质（推荐）" IsChecked="True" MinHeight="28"/>
+            <RadioButton x:Name="QIa" GroupName="q" Content="下载前让我手动选画质（运行时列清单）" MinHeight="28"/>
+            <RadioButton x:Name="Q1080" GroupName="q" Content="1080P 优先" MinHeight="28"/>
+            <RadioButton x:Name="Q4k" GroupName="q" Content="4K 优先（需先扫码登录大会员账号）" MinHeight="28"/>
+            <RadioButton x:Name="Q480" GroupName="q" Content="省流量优先（480P/360P）" MinHeight="28"/>
           </StackPanel>
           <StackPanel Spacing="2">
-            <RadioButton x:Name="EAuto" GroupName="e" Content="编码自动（推荐）" IsChecked="True"/>
-            <RadioButton x:Name="EHevc" GroupName="e" Content="HEVC 优先（体积小）"/>
-            <RadioButton x:Name="EAvc" GroupName="e" Content="AVC 兼容优先（老设备选这个）"/>
+            <RadioButton x:Name="EAuto" GroupName="e" Content="编码自动（推荐）" IsChecked="True" MinHeight="28"/>
+            <RadioButton x:Name="EHevc" GroupName="e" Content="HEVC 优先（体积小）" MinHeight="28"/>
+            <RadioButton x:Name="EAvc" GroupName="e" Content="AVC 兼容优先（老设备选这个）" MinHeight="28"/>
           </StackPanel>
         </StackPanel>
       </Border>
@@ -103,14 +169,14 @@
       <Border Padding="12" CornerRadius="8" BorderBrush="#330000AA" BorderThickness="1">
         <StackPanel Spacing="6">
           <TextBlock Text="内容选择" FontWeight="Bold"/>
-          <CheckBox x:Name="AudioOnlyBox" Content="只要音频（不要视频画面）"/>
+          <CheckBox x:Name="AudioOnlyBox" Content="只要音频（不要视频画面）" MinHeight="28"/>
           <StackPanel Spacing="2">
-            <RadioButton x:Name="DNone" GroupName="d" Content="不带弹幕" IsChecked="True"/>
-            <RadioButton x:Name="DDd" GroupName="d" Content="视频带弹幕"/>
-            <RadioButton x:Name="DOnly" GroupName="d" Content="只要弹幕文件"/>
+            <RadioButton x:Name="DNone" GroupName="d" Content="不带弹幕" IsChecked="True" MinHeight="28"/>
+            <RadioButton x:Name="DDd" GroupName="d" Content="视频带弹幕" MinHeight="28"/>
+            <RadioButton x:Name="DOnly" GroupName="d" Content="只要弹幕文件" MinHeight="28"/>
           </StackPanel>
-          <CheckBox x:Name="CoverOnlyBox" Content="只要封面"/>
-          <CheckBox x:Name="SubOnlyBox" Content="只要字幕"/>
+          <CheckBox x:Name="CoverOnlyBox" Content="只要封面" MinHeight="28"/>
+          <CheckBox x:Name="SubOnlyBox" Content="只要字幕" MinHeight="28"/>
         </StackPanel>
       </Border>
 
@@ -118,8 +184,9 @@
       <Border Padding="12" CornerRadius="8" BorderBrush="#330000AA" BorderThickness="1">
         <StackPanel Spacing="6">
           <TextBlock Text="选集（合集/系列/番剧/多P视频时可填）" FontWeight="Bold"/>
-          <TextBox x:Name="PageBox" Watermark="例如：8 或 1,2 或 3-5 或 ALL 或 LAST；留空=全部"/>
-          <TextBlock x:Name="PageErrorText" IsVisible="False" Foreground="#E05555" FontSize="12"
+          <TextBox x:Name="PageBox" AutomationProperties.Name="选集输入框"
+                   Watermark="例如：8 或 1,2 或 3-5 或 ALL 或 LAST；留空=全部"/>
+          <TextBlock x:Name="PageErrorText" IsVisible="False" Foreground="#C92A2A" FontSize="12"
                      TextWrapping="Wrap"
                      Text="选集写法不对，只能填：8、1,2、3-5、ALL 或 LAST（留空=全部）。请改正后才能开始下载。"/>
         </StackPanel>
@@ -130,8 +197,8 @@
               BorderBrush="#330000AA" BorderThickness="1">
         <StackPanel Spacing="6">
           <TextBlock Text="列表下载辅助（合集/系列/收藏夹/UP主页）" FontWeight="Bold"/>
-          <CheckBox x:Name="DelayBox" Content="每个视频之间歇 5 秒（防限流，建议勾）" IsChecked="True"/>
-          <CheckBox x:Name="SaveArchivesBox" Content="记住已下载，中断后再下自动跳过（建议勾）" IsChecked="True"/>
+          <CheckBox x:Name="DelayBox" Content="每个视频之间歇 5 秒（防限流，建议勾）" IsChecked="True" MinHeight="28"/>
+          <CheckBox x:Name="SaveArchivesBox" Content="记住已下载，中断后再下自动跳过（建议勾）" IsChecked="True" MinHeight="28"/>
         </StackPanel>
       </Border>
 
@@ -141,37 +208,86 @@
           <TextBlock Text="下载到哪个文件夹" FontWeight="Bold"/>
           <Grid ColumnDefinitions="*,Auto">
             <TextBlock x:Name="DirText" VerticalAlignment="Center" TextWrapping="Wrap"/>
-            <Button x:Name="BrowseBtn" Grid.Column="1" Content="浏览…"/>
+            <Button x:Name="BrowseBtn" Grid.Column="1" Content="浏览…" MinHeight="32"
+                    AutomationProperties.Name="浏览保存文件夹（Alt+B）"/>
           </Grid>
         </StackPanel>
       </Border>
 
-      <!-- 操作区 -->
-      <StackPanel Orientation="Horizontal" Spacing="10">
-        <Button x:Name="StartBtn" Content="开始下载" FontWeight="Bold" Padding="20,8"/>
-        <Button x:Name="CancelBtn" Content="取消下载" IsEnabled="False" Padding="20,8"/>
-        <Button x:Name="LoginBtn" Content="扫码登录" Padding="20,8"/>
-        <TextBlock x:Name="LoginStatus" VerticalAlignment="Center" Text="未登录"/>
+      <!-- v3.8（R2.5 + ErrorMapper）：失败归因醒目条（出了什么事→为什么→怎么做 三段式） -->
+      <Border x:Name="FailBanner" IsVisible="False" Padding="10" CornerRadius="8"
+              Background="#11C92A2A" BorderBrush="#66C92A2A" BorderThickness="1">
+        <TextBlock x:Name="FailBannerText" FontSize="13" Foreground="#B3261E"
+                   FontWeight="SemiBold" TextWrapping="Wrap"/>
+      </Border>
+
+      <!-- v3.8（R2.5）：下载成功后的闭环操作 -->
+      <StackPanel x:Name="CompletionActions" IsVisible="False" Orientation="Horizontal" Spacing="10">
+        <Button x:Name="OpenDirBtn" Content="打开保存文件夹" Padding="16,6" MinHeight="32"
+                AutomationProperties.Name="打开保存文件夹"/>
+        <Button x:Name="AgainBtn" Content="再下载一个" Padding="16,6" MinHeight="32"
+                AutomationProperties.Name="再下载一个"/>
       </StackPanel>
 
-      <ProgressBar x:Name="DownloadProgress" Minimum="0" Maximum="100" Value="0" Height="14"/>
-      <TextBlock x:Name="StatusText" Text="就绪" Opacity="0.8"/>
+      <!-- v4.0（R3.13 / 架构 §12）：UP 主导出清单后的闭环操作 -->
+      <StackPanel x:Name="UpSpaceActions" IsVisible="False" Orientation="Horizontal" Spacing="10">
+        <Button x:Name="OpenListDirBtn" Content="打开清单所在文件夹" Padding="16,6" MinHeight="32"
+                AutomationProperties.Name="打开清单所在文件夹"/>
+        <Button x:Name="OpenGeneratorBtn" Content="打开批量生成器" Padding="16,6" MinHeight="32"
+                AutomationProperties.Name="打开批量生成器"/>
+      </StackPanel>
 
-      <!-- 日志 -->
-      <TextBlock Text="运行日志" FontWeight="Bold"/>
+      <!-- v3.8（R2.7/R2.8）：日志工具条（详细开关 + 复制 + 导出求助文件） -->
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+        <TextBlock Text="运行日志" FontWeight="Bold" VerticalAlignment="Center"/>
+        <CheckBox x:Name="VerboseLogBox" Grid.Column="1" Content="显示详细输出"
+                  VerticalAlignment="Center" Margin="8,0" MinHeight="28"/>
+        <Button x:Name="CopyLogBtn" Grid.Column="2" Content="复制日志"
+                Padding="12,3" FontSize="12" Margin="4,0" MinHeight="32"
+                AutomationProperties.Name="复制日志"/>
+        <Button x:Name="ExportHelpBtn" Grid.Column="3" Content="导出求助文件"
+                Padding="12,3" FontSize="12" Margin="4,0" MinHeight="32"
+                AutomationProperties.Name="导出求助文件"/>
+      </Grid>
       <Border BorderBrush="#330000AA" BorderThickness="1" CornerRadius="8" Padding="4">
         <ScrollViewer x:Name="LogScroll" Height="200">
-          <TextBox x:Name="LogBox" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
-                   BorderThickness="0" Background="Transparent" FontSize="12"/>
+          <!-- v3.8（地基）：ItemsControl 逐行 TextBlock——支持关键行高亮与简洁模式折叠 -->
+          <ItemsControl x:Name="LogList"/>
         </ScrollViewer>
       </Border>
 
     </StackPanel>
   </ScrollViewer>
 
-  <!-- v3.5：界面右下角常驻版本小字（单一来源 AppVersion.CornerLabel） -->
-  <Border Grid.Row="1" Padding="14,3" Background="#08000000">
-    <TextBlock x:Name="VersionCorner" HorizontalAlignment="Right" FontSize="11" Opacity="0.5"/>
+  <!-- v4.0（R3.1）：固定底部操作条——不随日志滚动消失 -->
+  <Border Grid.Row="1" Background="#0D000000" BorderBrush="#1F000000"
+          BorderThickness="0,1,0,0" Padding="18,10">
+    <StackPanel Spacing="8">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <!-- v4.0（R3.2）：主按钮两态——开始（主色醒目 #005A9E）⇄ 下载中原地变红色「取消下载」（#A4262C） -->
+        <Button x:Name="StartBtn" Content="开始下载" FontWeight="Bold" FontSize="15"
+                Padding="26,10" MinHeight="40" Background="#005A9E" Foreground="White"
+                AutomationProperties.Name="开始下载（Alt+S）"/>
+        <!-- v4.0（R3.12）：登录态三态标识（颜色点 + 文案），状态从登录回执与下载失败信号联动刷新 -->
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                    Margin="14,0,0,0" Spacing="6">
+          <TextBlock x:Name="LoginStatusDot" Text="●" FontSize="12" Foreground="#606060"
+                     VerticalAlignment="Center"/>
+          <TextBlock x:Name="LoginStatus" Text="未登录" FontSize="12" Foreground="#606060"
+                     VerticalAlignment="Center" TextWrapping="Wrap"/>
+        </StackPanel>
+        <Button x:Name="LoginBtn" Grid.Column="2" Content="扫码登录" Padding="16,8" MinHeight="36"
+                AutomationProperties.Name="扫码登录（Alt+L）"/>
+      </Grid>
+      <Grid ColumnDefinitions="*,Auto">
+        <ProgressBar x:Name="DownloadProgress" Minimum="0" Maximum="100" Value="0" Height="12"
+                     VerticalAlignment="Center"/>
+        <!-- v4.0（R3.3）：批量/多P 时显示「已完成 x/N · 正在下载：<标题>」 -->
+        <TextBlock x:Name="BatchProgressText" Grid.Column="1" IsVisible="False" FontSize="12"
+                   Margin="10,0,0,0" VerticalAlignment="Center" Foreground="#404040"/>
+      </Grid>
+      <TextBlock x:Name="StatusText" Text="就绪" FontSize="12" Foreground="#404040"/>
+    </StackPanel>
   </Border>
   </Grid>
 </Window>
