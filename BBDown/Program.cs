@@ -1,4 +1,4 @@
-using QRCoder;
+﻿using QRCoder;
 using System;
 using System.Collections.Generic;
 using System.CommandLine;
@@ -128,10 +128,12 @@ namespace BBDown
                 // 服务器模式需要完整的arg列表
                 if (commandLineResult.CommandResult.Command.Name.ToLower() == "serve")
                 {
-                    return await parser.InvokeAsync(args.ToArray());
+                    int serve = await parser.InvokeAsync(args.ToArray());
+                    return ArchivePolicy.CombineExitCode(serve, Environment.ExitCode);
                 }
                 newArgsList.Add(commandLineResult.CommandResult.Command.Name);
-                return await parser.InvokeAsync(newArgsList.ToArray());
+                int sub = await parser.InvokeAsync(newArgsList.ToArray());
+                return ArchivePolicy.CombineExitCode(sub, Environment.ExitCode);
             }
 
             foreach (var item in commandLineResult.CommandResult.Children)
@@ -163,7 +165,14 @@ namespace BBDown
             //处理配置文件
             BBDownConfigParser.HandleConfig(newArgsList, rootCommand);
 
-            return await parser.InvokeAsync(newArgsList.ToArray());
+            // 修复（本轮实测发现）：原来直接 `return await parser.InvokeAsync(...)`。
+            // 但 InvokeAsync 在处理器「正常返回」时恒为 0，而 Task<int> Main 的返回值会成为
+            // 进程退出码，于是把处理器内设置的 Environment.ExitCode 完全覆盖掉——
+            // DownloadPagesAsync 里「有分P失败置 1」等于没写，助手照样按 0 判成功。
+            // 已用探针实测确认：InvokeAsync 返回 0，Environment.ExitCode 为 1。
+            // 现在合并两条来源：InvokeAsync 非 0（如参数错误）优先保留，否则以 ExitCode 为准。
+            int invokeResult = await parser.InvokeAsync(newArgsList.ToArray());
+            return ArchivePolicy.CombineExitCode(invokeResult, Environment.ExitCode);
         }
 
         private static Task RunApp(MyOption myOption)
@@ -220,8 +229,24 @@ namespace BBDown
             Config.TOKEN = myOption.AccessToken.Replace("access_token=", "");
 
             LogDebug("AppDirectory: {0}", APP_DIR);
-            LogDebug("运行参数：{0}", JsonSerializer.Serialize(myOption, MyOptionJsonContext.Default.MyOption));
+            // 修复（红队#12）：原来整份 MyOption 序列化进 debug 日志，含 Cookie 与 AccessToken 明文。
+            // 改为只打排除了凭据字段的安全投影，保留排障需要的其余参数。
+            LogDebug("运行参数：{0}", JsonSerializer.Serialize(SanitizeOption(myOption), MyOptionJsonContext.Default.MyOption));
             return (encodingPriority, dfnPriority, firstEncoding, downloadDanmaku, input, savePathFormat, lang, aidOri, delay);
+        }
+
+        /// <summary>
+        /// 修复（红队#12）：debug 日志用的参数安全投影——复制一份并清空凭据字段，
+        /// 其余参数原样保留（排障仍能看到清晰度优先级、保存模板等）。
+        /// </summary>
+        private static MyOption SanitizeOption(MyOption o)
+        {
+            var copy = (MyOption)o.GetType().GetMethod("MemberwiseClone",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+                .Invoke(o, null)!;
+            copy.Cookie = copy.Cookie.Length == 0 ? "" : "<已隐去>";
+            copy.AccessToken = copy.AccessToken.Length == 0 ? "" : "<已隐去>";
+            return copy;
         }
 
         public static async Task<(string fetchedAid, VInfo vInfo, string apiType)> GetVideoInfoAsync(MyOption myOption, string aidOri, string input)
@@ -328,6 +353,7 @@ namespace BBDown
             bool cheese = vInfo.IsCheese;
             //获取已选择的分P列表
             List<string>? selectedPages = GetSelectedPages(myOption, vInfo, input);
+            int failedPages = 0;   // 修复（红队#3）：统计失败分P，决定退出码与归档写入
 
             Log($"共计 {pagesInfo.Count} 个分P, 已选择：" + (selectedPages == null ? "ALL" : string.Join(",", selectedPages)));
             var pagesCount = pagesInfo.Count;
@@ -365,19 +391,40 @@ namespace BBDown
                     }
                 }
 
-                await DownloadPageAsync(p, myOption, vInfo, pagesInfo, encodingPriority, dfnPriority, firstEncoding,
+                bool pageOk = await DownloadPageAsync(p, myOption, vInfo, pagesInfo, encodingPriority, dfnPriority, firstEncoding,
                     downloadDanmaku, input, savePathFormat, lang, aidOri, apiType, relatedTask);
 
-                if (myOption.SaveArchivesToFile)
+                if (!pageOk)
+                {
+                    // 修复（红队#3）：分P失败时**不得**写入已下载归档。
+                    // 原来无条件 SaveAidToFile(p.aid)，导致失败的分P进了 BBDown.archives，
+                    // 下次同一链接勾选「记录已下载」时会命中 CheckAidFromFile 直接跳过——
+                    // 用户再也下不到这个视频，且换清晰度也不下载（不可逆的数据损失）。
+                    failedPages++;
+                    LogError($"P{p.index}(aid:{p.aid}) 未成功下载，已跳过归档记录，下次会重新尝试");
+                    continue;
+                }
+
+                if (myOption.SaveArchivesToFile && ArchivePolicy.ShouldArchive(pageOk))
                 {
                     SaveAidToFile(p.aid);
                 }
             }
 
-            Log("任务完成");
+            // 修复（红队#3）：有分P失败时不报「任务完成」，改打失败汇总并置非零退出码。
+            // 判定走 ArchivePolicy 纯函数，可单测（见 BBDown.LoginTests）。
+            if (!ArchivePolicy.ShouldReportTaskDone(failedPages))
+            {
+                LogError($"任务结束：{failedPages} 个分P失败，请查看上方红色错误信息");
+            }
+            else
+            {
+                Log("任务完成");
+            }
+            Environment.ExitCode = ArchivePolicy.ExitCode(failedPages);
         }
 
-        private static async Task DownloadPageAsync(Page p, MyOption myOption, VInfo vInfo, List<Page> selectedPagesInfo, Dictionary<string, byte> encodingPriority, Dictionary<string, int> dfnPriority,
+        private static async Task<bool> DownloadPageAsync(Page p, MyOption myOption, VInfo vInfo, List<Page> selectedPagesInfo, Dictionary<string, byte> encodingPriority, Dictionary<string, int> dfnPriority,
             string? firstEncoding, bool downloadDanmaku, string input, string savePathFormat, string lang, string aidOri, string apiType, DownloadTask? relatedTask = null)
         {
             string desc = string.IsNullOrEmpty(p.desc) ? vInfo.Desc : p.desc;
@@ -447,7 +494,7 @@ namespace BBDown
                     if (myOption.SubOnly)
                     {
                         if (Directory.Exists(p.aid) && Directory.GetFiles(p.aid).Length == 0) Directory.Delete(p.aid, true);
-                        return;
+                        return true;
                     }
                 }
 
@@ -481,12 +528,12 @@ namespace BBDown
                     if (parsedResult.VideoTracks.Count == 0)
                     {
                         LogWarn("没有找到符合要求的视频流");
-                        if (myOption.VideoOnly) return;
+                        if (myOption.VideoOnly) return false;
                     }
                     if (parsedResult.AudioTracks.Count == 0)
                     {
                         LogWarn("没有找到符合要求的音频流");
-                        if (myOption.AudioOnly) return;
+                        if (myOption.AudioOnly) return false;
                     }
 
                     if (myOption.AudioOnly)
@@ -527,7 +574,7 @@ namespace BBDown
                     //仅展示 跳过下载
                     if (myOption.OnlyShowInfo)
                     {
-                        return;
+                        return true;
                     }
 
                     int vIndex = 0; //用户手动选择的视频序号
@@ -572,7 +619,7 @@ namespace BBDown
                             {
                                 Directory.Delete(p.aid);
                             }
-                            return;
+                            return true;
                         }
                     }
 
@@ -582,7 +629,7 @@ namespace BBDown
                         var newCoverPath = Path.ChangeExtension(savePath, Path.GetExtension(coverUrl));
                         await DownloadFile(coverUrl, newCoverPath, downloadConfig);
                         if (Directory.Exists(p.aid) && Directory.GetFiles(p.aid).Length == 0) Directory.Delete(p.aid, true);
-                        return;
+                        return true;
                     }
 
                     Log($"已选择的流:");
@@ -605,7 +652,7 @@ namespace BBDown
                         {
                             Directory.Delete(p.aid, true);
                         }
-                        return;
+                        return true;
                     }
 
                     if (selectedVideo != null)
@@ -647,7 +694,7 @@ namespace BBDown
                     Log($"下载P{p.index}完毕");
                     if (!parsedResult.VideoTracks.Any()) videoPath = "";
                     if (!parsedResult.AudioTracks.Any()) audioPath = "";
-                    if (myOption.SkipMux) return;
+                    if (myOption.SkipMux) return true;
                     Log($"开始合并音视频{(subtitleInfo.Any() ? "和字幕" : "")}...");
                     if (myOption.AudioOnly)
                         savePath = savePath[..^4] + ".m4a";
@@ -661,7 +708,7 @@ namespace BBDown
                         subtitleInfo, myOption.AudioOnly, myOption.VideoOnly, p.points, p.pubTime, myOption.SimplyMux);
                     if (code != 0 || !File.Exists(savePath) || new FileInfo(savePath).Length == 0)
                     {
-                        LogError("合并失败"); return;
+                        LogError("合并失败"); return false;
                     }
                     Log("清理临时文件...");
                     Thread.Sleep(200);
@@ -712,7 +759,7 @@ namespace BBDown
                             clips.ForEach(Console.WriteLine);
                         }
                     }
-                    if (myOption.OnlyShowInfo) return;
+                    if (myOption.OnlyShowInfo) return true;
                     savePath = FormatSavePath(savePathFormat, title, parsedResult.VideoTracks.ElementAtOrDefault(vIndex), null, p, pagesCount, apiType, pubTime);
                     if (File.Exists(savePath) && new FileInfo(savePath).Length != 0)
                     {
@@ -721,7 +768,7 @@ namespace BBDown
                         {
                             Directory.Delete(p.aid, true);
                         }
-                        return;
+                        return true;
                     }
                     var pad = string.Empty.PadRight(clips.Count.ToString().Length, '0');
                     for (int i = 0; i < clips.Count; i++)
@@ -736,7 +783,7 @@ namespace BBDown
                     var files = GetFiles(Path.GetDirectoryName(videoPath)!, ".mp4");
                     videoPath = $"{p.aid}/{p.aid}.P{p.index}.{p.cid}.mp4";
                     BBDownMuxer.MergeFLV(files, videoPath);
-                    if (myOption.SkipMux) return;
+                    if (myOption.SkipMux) return true;
                     Log($"开始混流视频{(subtitleInfo.Any() ? "和字幕" : "")}...");
                     if (myOption.AudioOnly)
                         savePath = savePath[..^4] + ".m4a";
@@ -750,17 +797,20 @@ namespace BBDown
                         subtitleInfo, myOption.AudioOnly, myOption.VideoOnly, p.points, p.pubTime, myOption.SimplyMux);
                     if (code != 0 || !File.Exists(savePath) || new FileInfo(savePath).Length == 0)
                     {
-                        LogError("合并失败"); return;
+                        LogError("合并失败"); return false;
                     }
+                    // 修复（第三轮自查）：此处已经过了上方「合并失败」判定，说明成品文件
+                    // 已存在且非空——下载这件事本身已经成功。清理临时文件只是收尾，
+                    // 但原来的写法把清理放在同一个 try 里，一旦某个临时文件被杀软/播放器/资源管理器
+                    // 占用导致 File.Delete 抛异常，就会被外层 catch 当成「下载失败」：
+                    //   ① 无谓地重试并重新下载已成功的分P（耗时、耗流量）；
+                    //   ② 3 次重试耗尽后 throw，一路冒到 DoWorkAsync → 整批剩余分P全部不下载，
+                    //      而这些已成功的分P又被记入归档 → 下次永久跳过。
+                    // 因此清理改为「尽力而为」：逐个吞掉异常并记一行警告，绝不影响成功判定。
                     Log("清理临时文件...");
                     Thread.Sleep(200);
-                    if (parsedResult.VideoTracks.Count != 0) File.Delete(videoPath);
-                    foreach (var s in subtitleInfo) File.Delete(s.path);
-                    foreach (var a in audioMaterial) File.Delete(a.path);
-                    if (p.points.Any()) File.Delete(Path.Combine(Path.GetDirectoryName(string.IsNullOrEmpty(videoPath) ? audioPath : videoPath)!, "chapters"));
-                    if (selectedPagesInfo.Count == 1 || p.index == selectedPagesInfo.Last().index || p.aid != selectedPagesInfo.Last().aid)
-                        File.Delete(coverPath);
-                    if (Directory.Exists(p.aid) && Directory.GetFiles(p.aid).Length == 0) Directory.Delete(p.aid, true);
+                    CleanupTempFiles(p, videoPath, parsedResult, subtitleInfo, audioMaterial,
+                        coverPath, selectedPagesInfo);
                 }
                 else
                 {
@@ -770,7 +820,7 @@ namespace BBDown
                         LogError(parsedResult.WebJsonString);
                     }
                     LogDebug("{0}", parsedResult.WebJsonString);
-                    return;
+                    return false;
                 }
             }
             catch (Exception ex)
@@ -781,6 +831,49 @@ namespace BBDown
                 await Task.Delay(3000);
                 goto downloadPage;
             }
+            return true;
+        }
+
+        /// <summary>
+        /// 尽力而为的临时文件清理（第三轮自查修复）：清理阶段的任何异常都不得影响
+        /// 「本分P已成功下载」这个判定，逐项吞异常并只记一行警告。
+        /// </summary>
+        private static void CleanupTempFiles(Page p, string videoPath, ParsedResult parsedResult,
+            List<Subtitle> subtitleInfo, List<AudioMaterial> audioMaterial,
+            string coverPath, List<Page> selectedPagesInfo)
+        {
+            void Try(string what, Action act)
+            {
+                try { act(); }
+                catch (Exception ex) { LogWarn($"清理{what}失败（不影响本次下载结果）：{ex.Message}"); }
+            }
+
+            Try("视频临时文件", () =>
+            {
+                if (parsedResult.VideoTracks.Count != 0) File.Delete(videoPath);
+            });
+            Try("字幕临时文件", () =>
+            {
+                foreach (var sub in subtitleInfo) File.Delete(sub.path);
+            });
+            Try("音频临时文件", () =>
+            {
+                foreach (var a in audioMaterial) File.Delete(a.path);
+            });
+            Try("章节文件", () =>
+            {
+                if (p.points.Any())
+                    File.Delete(Path.Combine(Path.GetDirectoryName(videoPath)!, "chapters"));
+            });
+            Try("封面文件", () =>
+            {
+                if (selectedPagesInfo.Count == 1 || p.index == selectedPagesInfo.Last().index || p.aid != selectedPagesInfo.Last().aid)
+                    File.Delete(coverPath);
+            });
+            Try("空目录", () =>
+            {
+                if (Directory.Exists(p.aid) && Directory.GetFiles(p.aid).Length == 0) Directory.Delete(p.aid, true);
+            });
         }
 
         private static async Task DoWorkAsync(MyOption myOption)

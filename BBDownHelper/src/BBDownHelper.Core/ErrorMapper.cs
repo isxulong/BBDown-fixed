@@ -28,8 +28,36 @@ public static class ErrorMapper
         new(@"HTTP(/[0-9](?:[.][0-9])?)?[ ]*403", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
+    /// 本轮 P1 修复：412 与 403 同构锚定。
+    /// 原判据是裸 Contains("412")，而日志尾部里 412 这个数字到处都有——
+    /// aria2 分段字节数、文件大小、cid 片段、时间戳都可能撞上，
+    /// 结果任何失败都被说成「被 B 站风控拦住」，用户按错误方向等待重试。
+    /// </summary>
+    private static readonly Regex Http412Rx =
+        new(@"HTTP(/[0-9](?:[.][0-9])?)?[ ]*412", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// 本轮 P1 修复：内核「组件缺失」信号。
+    /// Program.Methods.cs:148/156/168 在缺 mp4box / ffmpeg / aria2c 时抛
+    /// 「找不到可执行的XXX文件」；原判据里的裸 Contains("找不到") 会把它
+    /// 归因到「保存位置不可用（U 盘已拔出）」，用户在一个完全正常的目录上
+    /// 反复点「浏览…」永远修不好。必须在路径判据之前单列。
+    /// </summary>
+    private static bool IsMissingComponent(string t) =>
+        t.Contains("找不到可执行的", StringComparison.Ordinal)
+        || t.Contains("可执行的ffmpeg", StringComparison.OrdinalIgnoreCase)
+        || t.Contains("可执行的mp4box", StringComparison.OrdinalIgnoreCase)
+        || t.Contains("可执行的aria2c", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// v4.0（R3.12）：日志尾部是否指向「登录/凭据」问题（下载失败信号 → 登录态联动刷新用）。
     /// 与 MapExit 的 403/登录分支同一特征集，两处必须一致（MapExit 复用本方法）。
+    ///
+    /// 本轮 P1 修复：去掉裸 Contains("cookie")。
+    /// 内核只要存在 BBDown.data，每次启动必打「加载本地cookie...」（Program.Methods.cs:227），
+    /// 这行天然坐在日志尾部，于是**任何一次下载失败**（风控、断网、磁盘满、合并失败）
+    /// 都会命中裸 cookie 子串 → 全部误报成「需要登录」。
+    /// 改为只认明确语义短语；「加载本地cookie」「Cookie 已自动刷新」这类陈述句不参与判定。
     /// </summary>
     public static bool IsLoginRelated(string logTail)
     {
@@ -37,20 +65,25 @@ public static class ErrorMapper
         return Http403Rx.IsMatch(t)
             || t.Contains("需要登录", StringComparison.Ordinal)
             || t.Contains("未登录", StringComparison.Ordinal)
-            || t.Contains("凭据", StringComparison.Ordinal)
-            || t.Contains("cookie", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("尚未登录", StringComparison.Ordinal)
+            || t.Contains("cookie 失效", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("cookie失效", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("cookie 已失效", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("cookie已失效", StringComparison.OrdinalIgnoreCase)
+            || t.Contains("凭据已失效", StringComparison.Ordinal)
+            || t.Contains("凭据失效", StringComparison.Ordinal)
             || t.Contains("付费", StringComparison.Ordinal);
     }
 
     /// <summary>
     /// 按 BBDown 退出码 + 日志尾部特征归因。特征优先级：风控 412 → 登录/付费 403 →
-    /// 磁盘/路径 → 网络超时 → 杀软拦截 → 兜底（退出码 + 通用三因）。
+    /// 组件缺失 → 磁盘/路径 → 网络超时 → 杀软拦截 → 兜底（退出码 + 通用三因）。
     /// </summary>
     public static MappedError MapExit(int exitCode, string logTail)
     {
         string t = logTail ?? "";
 
-        if (t.Contains("412", StringComparison.Ordinal))
+        if (Http412Rx.IsMatch(t))
             return new("下载被 B 站访问限制拦住了（412）",
                 "短时间内请求太多，触发了 B 站风控",
                 "稍等几分钟、减少操作频率后重试");
@@ -59,6 +92,14 @@ public static class ErrorMapper
             return new("这个内容需要登录或付费才能下载",
                 "未登录、登录凭据已失效，或它是大会员/付费内容",
                 "点「扫码登录」完成登录后重试；付费内容需购买后才能下载");
+
+        // 组件缺失必须排在路径判据之前：内核文案「找不到可执行的ffmpeg文件」里的
+        // 「找不到」原会被路径分支吃掉，把缺组件误报成「U 盘已拔出」。
+        if (IsMissingComponent(t))
+            return new("内核组件缺失",
+                "core 文件夹里少了 ffmpeg / mp4box / aria2c 其中之一",
+                "用完整压缩包重新解压（core 文件夹里应包含 ffmpeg.exe、aria2c.exe、BBDown.exe），"
+                + "并检查杀毒软件是否把它们隔离了");
 
         if (t.Contains("磁盘", StringComparison.Ordinal)
             || t.Contains("空间不足", StringComparison.Ordinal)
@@ -70,11 +111,11 @@ public static class ErrorMapper
 
         if (t.Contains("路径不存在", StringComparison.Ordinal)
             || t.Contains("目录不存在", StringComparison.Ordinal)
-            || t.Contains("Could not find", StringComparison.OrdinalIgnoreCase)
-            || t.Contains("找不到", StringComparison.Ordinal))
+            || t.Contains("Could not find", StringComparison.OrdinalIgnoreCase))
             return new("保存位置不可用",
                 "保存文件夹不存在（可能被删除，或 U 盘/移动硬盘已拔出）",
                 "点「浏览…」重新选一个保存文件夹后重试");
+
 
         if (t.Contains("timeout", StringComparison.OrdinalIgnoreCase)
             || t.Contains("timed out", StringComparison.OrdinalIgnoreCase)

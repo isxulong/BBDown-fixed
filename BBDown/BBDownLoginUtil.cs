@@ -99,7 +99,13 @@ namespace BBDown
                         //refresh_token 单独存一行, 供自动刷新使用
                         if (!string.IsNullOrWhiteSpace(refreshToken))
                             File.WriteAllText(Path.Combine(Program.APP_DIR, "BBDown.refresh_token"), refreshToken);
-                        Log("登录成功: SESSDATA=" + sessdata);
+                        // P1 安全修复：不再打印凭据值本身。
+                        // 原句 `Log("登录成功: SESSDATA=" + sessdata)` 把 SESSDATA 明文打到控制台，
+                        // 而扫码登录是必经路径（每次都打印），bat 版/EXE 版都是用户可见的窗口，
+                        // 说明书又教用户「复制这段发给维护者」——等于教用户外发凭据。
+                        // 保留「登录成功」可诊断语义 + 凭据长度指纹（足以判断有没有拿到、有没有串号），
+                        // 不含可用于冒充登录的明文。
+                        Log("登录成功: 已写入 BBDown.data（SESSDATA 长度 " + (sessdata?.Length ?? 0) + "，内容不打印）");
                         File.Delete("qrcode.png");
                         break;
                     }
@@ -443,7 +449,8 @@ namespace BBDown
                     else if (code == "0")
                     {
                         string cc = JsonDocument.Parse(web).RootElement.GetProperty("data").GetProperty("access_token").ToString();
-                        Log("登录成功: AccessToken=" + cc);
+                        // P1 安全修复：同网页通道，不打印 access_token 明文（TV 通道凭据同样可冒充登录）。
+                        Log("登录成功: 已写入 BBDownTV.data（access_token 长度 " + (cc?.Length ?? 0) + "，内容不打印）");
                         //导出cookie
                         File.WriteAllText(Path.Combine(Program.APP_DIR, "BBDownTV.data"), "access_token=" + cc);
                         File.Delete("qrcode.png");

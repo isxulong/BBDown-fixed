@@ -1,4 +1,4 @@
-// BBDown 换票 v4 mock 测试
+﻿// BBDown 换票 v4 mock 测试
 // 在 v3 三情形基础上, 覆盖 v4 六项修复的回归断言:
 //  ① 首个候选 302 链直接给全 Cookie (含 SESSDATA), 应立即停止、不再请求剩余候选
 //  ② 前两个候选无 SESSDATA、第三个候选 200 HTML 且 body 含 sso 链接、sso 链接响应给 SESSDATA (实网失败复现场景)
@@ -241,6 +241,56 @@ Console.WriteLine("== 测试⑥: sso 首链接异常不吞掉剩余链接; 畸�
     Check(bad.Count == 0, "畸形候选 URL 应不抛异常, 返回空 Cookie (降级路径 TryCreate 修复)");
     Check(BBDownLoginUtil.SafeHost(":::: not-a-url ::::") != null, "SafeHost 对畸形 URL 不抛异常");
 }
+
+// ===== 修复（红队#3）归档与退出码判定：纯函数行为验证 =====
+// 背景：DownloadPageAsync 在「合并失败」「解析此分P失败」时只打红字 return（不抛异常），
+// 旧代码调用方无条件 SaveAidToFile，失败分P被记入归档 → 下次直接跳过，不可逆。
+// 这些断言锁住「失败不归档、失败置非零退出码、成功仍为 0」三条语义。
+
+Check(BBDown.ArchivePolicy.ShouldArchive(true),
+    "分P成功 → 应写入已下载归档");
+Check(!BBDown.ArchivePolicy.ShouldArchive(false),
+    "分P失败 → 不得写入已下载归档 (缺陷①: 否则下次永久跳过)");
+
+Check(BBDown.ArchivePolicy.ExitCode(0) == 0,
+    "无失败分P → 退出码 0 (成功路径不得改动既有脚本行为)");
+Check(BBDown.ArchivePolicy.ExitCode(1) == 1,
+    "1 个失败分P → 退出码 1");
+Check(BBDown.ArchivePolicy.ExitCode(5) == 1,
+    "多个失败分P → 退出码仍为 1 (非失败数量)");
+
+Check(BBDown.ArchivePolicy.ShouldReportTaskDone(0),
+    "无失败 → 应报「任务完成」");
+Check(!BBDown.ArchivePolicy.ShouldReportTaskDone(3),
+    "有失败 → 不得报「任务完成」 (缺陷②: 否则用户以为下好了)");
+
+// ===== 探针：InvokeAsync 是否会吞掉 Environment.ExitCode =====
+var probe = await BBDown.LoginTests.ExitCodeProbe.RunAsync();
+Console.WriteLine($"[PROBE] InvokeAsync 返回={probe.invokeResult}, 处理器设置的 Environment.ExitCode={probe.envExitCode}");
+Check(probe.invokeResult == 0,
+    "探针确认: 处理器成功时 InvokeAsync 返回 0 (与 Environment.ExitCode 无关)");
+Check(probe.envExitCode == 1,
+    "探针确认: 处理器内 Environment.ExitCode=1 已被设置但会被 Main 的返回值覆盖");
+Check(BBDown.ArchivePolicy.CombineExitCode(probe.invokeResult, probe.envExitCode) == 1,
+    "合并规则: InvokeAsync=0 时必须以 Environment.ExitCode 为准 (否则失败码丢失)");
+Check(BBDown.ArchivePolicy.CombineExitCode(1, 0) == 1,
+    "合并规则: InvokeAsync 非 0 (如参数错误) 时优先保留它");
+Check(BBDown.ArchivePolicy.CombineExitCode(0, 0) == 0,
+    "合并规则: 两者均为 0 → 成功");
+
+// ===== 端到端：失败退出码能否真正传出进程 =====
+int oldMain = await BBDown.LoginTests.ExitCodeProbe.RunOldMainAsync();
+Check(oldMain == 0,
+    "缺陷复现: 旧写法 (直接 return InvokeAsync) 在有失败分P时仍返回 0 —— 修复前失败码是丢的");
+int fixedMain = await BBDown.LoginTests.ExitCodeProbe.RunFixedMainAsync();
+Check(fixedMain == 1,
+    "修复验证: 合并后 Main 返回 1 —— 失败码真正传出进程 (助手可据此判失败)");
+
+// ===== 第三轮：清理阶段异常不得判为下载失败 =====
+Check(!BBDown.ArchivePolicy.CleanupFailureCountsAsDownloadFailure(true),
+    "成品已校验通过后清理失败 → 不得判为下载失败 (否则误重试+整批中断+已成功分P被归档永久跳过)");
+Check(!BBDown.ArchivePolicy.CleanupFailureCountsAsDownloadFailure(false),
+    "成品无效时也不靠清理异常来判失败 (失败由合并校验负责, 职责不重叠)");
 
 Console.WriteLine();
 Console.WriteLine(failures == 0 ? "全部测试通过" : $"{failures} 个断言失败");

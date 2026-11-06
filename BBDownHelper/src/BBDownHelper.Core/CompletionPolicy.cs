@@ -25,8 +25,27 @@ public enum CompletionOutcome
 /// </summary>
 public static class CompletionPolicy
 {
+    /// <summary>
+    /// 本轮 P1 修复：内核「失败但退出码仍为 0」的路径。
+    /// 内核在合并失败 / 解析分P失败时只打一行红色日志然后 return
+    /// （Program.cs:664、:753 两处「合并失败」，:767「解析此分P失败」），
+    /// 进程随后照常走完循环并以 0 退出（DoWorkAsync 只在异常时才 Environment.Exit(1)）。
+    /// 助手若只看退出码，就会把「一个文件都没产出」报成「下载完成、保存到 …」，
+    /// 还播放完成提示音——用户以为下好了，去文件夹里找不到东西。
+    ///
+    /// 判据只认内核原文的失败措辞（带时间戳前缀的整行日志仍包含这些子串），
+    /// 不用裸「失败」二字——那会命中「重试失败次数」等无害文本。
+    /// </summary>
+    public static bool HasFailureSignal(string? logTail)
+    {
+        string t = logTail ?? "";
+        return t.Contains("合并失败", StringComparison.Ordinal)
+            || t.Contains("解析此分P失败", StringComparison.Ordinal);
+    }
+
     public static CompletionOutcome Route(
-        bool cancelling, bool upSpace, bool interactive, int exitCode, bool listFound)
+        bool cancelling, bool upSpace, bool interactive, int exitCode, bool listFound,
+        bool failureSignaled = false)
     {
         if (cancelling) return CompletionOutcome.Cancelled;
         if (upSpace)
@@ -35,6 +54,8 @@ public static class CompletionPolicy
                 : CompletionOutcome.UpExportFailed;
         if (interactive)
             return exitCode == 0 ? CompletionOutcome.IaEndedOk : CompletionOutcome.IaEndedAbnormal;
+        // 退出码 0 但有明确失败日志 → 仍判失败（-ia 分支保持原语义：那是用户可见的控制台，按退出码）
+        if (exitCode == 0 && failureSignaled) return CompletionOutcome.DownloadFailed;
         return exitCode == 0 ? CompletionOutcome.DownloadSuccess : CompletionOutcome.DownloadFailed;
     }
 }

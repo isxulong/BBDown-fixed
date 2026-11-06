@@ -16,7 +16,14 @@ public static partial class DiagnosticExport
     //   形态1 键值对：SESSDATA=xxx / SESSDATA: xxx（等号/冒号两侧可带空白，键后可带 JSON 引号）
     //   形态2 分隔符：tab 或 ≥2 个空格分隔（如 SESSDATA\t<值>）
     //   值：引号包裹（可含空格）整体打码，或未引号的一段非空白 token
-    [GeneratedRegex(@"(?i)(SESSDATA|bili_jct|DedeUserID|refresh_token|access_key|cookie)(""?\s*[=:]\s*|(?:[\t ]*\t[\t ]*| {2,}))(""[^""]*""|[^\s;,}""]+)")]
+    // 【本轮 P2 修复】把内核 TV 通道的 `AccessToken` / `access_token` 补进敏感键名表——
+    // 实测原表缺这两个词，`AccessToken=abcdef` 这类行会原样漏出（既有用例已覆盖，见 ReceiptAndDiagTests）。
+    // 【本轮 P2 修复 2】补 `ticket`：扫码换票的 ticket 出现在失败请求 URL 的 query 里
+    // （`?ticket=xxx`），崩溃文件里的异常全文会带出它。
+    // 【本轮修正】从键名表移除 `cookie`：它会把「收到 3 个Cookie: SESSDATA, bili_jct, buvid3」
+    // 这种**只列键名、不含值**的诊断行整行打成 `***`，丢掉诊断价值；真正的 Cookie 头是
+    // `Cookie: SESSDATA=xxx; bili_jct=yyy`，其中每个键值对由各自键名规则命中，不需要 `cookie` 兜底。
+    [GeneratedRegex(@"(?i)(SESSDATA|bili_jct|DedeUserID|refresh_token|access_key|access_token|AccessToken|ticket)(""?\s*[=:]\s*|(?:[\t ]*\t[\t ]*| {2,}))(""[^""]*""|[^\s;,}""]+)")]
     private static partial Regex SecretRx();
 
     /// <summary>打码一行日志里的凭据值（保留字段名与分隔符，值替换为 ***；引号包裹的值保留引号）。</summary>

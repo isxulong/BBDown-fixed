@@ -134,7 +134,10 @@ public sealed class LogStore : IDisposable
                     { AutoFlush = true };
                 }
                 foreach (var line in batch)
-                    _writer.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] {line}");
+                    // 本轮 P2 修复：落盘文件同样是外发材料——用户会把 core\logs 整个文件夹
+                    // 打包发给维护者。磁盘这份与内存缓冲、剪贴板、崩溃文件统一走一套打码；
+                    // 内存缓冲与界面上屏保留原始行，便于用户当场看清发生了什么。
+                    _writer.WriteLine($"[{DateTime.Now:HH:mm:ss.fff}] {DiagnosticExport.Scrub(line)}");
                 _fileFailCount = 0;   // 写成功即清零退避计数
             }
             catch (Exception ex)

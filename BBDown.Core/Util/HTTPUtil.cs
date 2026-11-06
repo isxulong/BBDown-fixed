@@ -34,11 +34,15 @@ namespace BBDown.Core.Util
             webRequest.Headers.CacheControl = CacheControlHeaderValue.Parse("no-cache");
             webRequest.Headers.Connection.Clear();
 
-            LogDebug("获取网页内容: Url: {0}, Headers: {1}", url, webRequest.Headers);
+            // 修复（红队#12）：原来把请求头整份 dump 进 debug 日志，其中 Cookie 头含完整
+            // SESSDATA / bili_jct；debug 一旦被 BBDown.config 打开，凭据就上进日志面板、
+            // helper-*.log 与「导出求助文件」。改为只打 URL 与关键头是否存在，不打值。
+            LogDebug("获取网页内容: Url: {0}, Cookie已附加: {1}", url, webRequest.Headers.Contains("Cookie"));
             var webResponse = (await AppHttpClient.SendAsync(webRequest, HttpCompletionOption.ResponseHeadersRead)).EnsureSuccessStatusCode();
 
             string htmlCode = await webResponse.Content.ReadAsStringAsync();
-            LogDebug("Response: {0}", htmlCode);
+            // 修复（红队#12）：响应体全文同样不再无条件转储（登录链路里可能带 ticket）。
+            LogDebug("Response: 长度 {0}", htmlCode.Length);
             return htmlCode;
         }
 
@@ -51,7 +55,7 @@ namespace BBDown.Core.Util
             webRequest.Headers.CacheControl = CacheControlHeaderValue.Parse("no-cache");
             webRequest.Headers.Connection.Clear();
 
-            LogDebug("获取网页重定向地址: Url: {0}, Headers: {1}", url, webRequest.Headers);
+            LogDebug("获取网页重定向地址: Url: {0}", url);
             var webResponse = (await AppHttpClient.SendAsync(webRequest, HttpCompletionOption.ResponseHeadersRead)).EnsureSuccessStatusCode();
             string location = webResponse.RequestMessage.RequestUri.AbsoluteUri;
             LogDebug("Location: {0}", location);
@@ -60,7 +64,8 @@ namespace BBDown.Core.Util
 
         public static async Task<byte[]> GetPostResponseAsync(string Url, byte[] postData, Dictionary<string, string> headers = null)
         {
-            LogDebug("Post to: {0}, data: {1}", Url, Convert.ToBase64String(postData));
+            // 修复（红队#12）：请求体 base64 不再转储（含用户会话相关字段）。
+            LogDebug("Post to: {0}, data 长度: {1}", Url, postData.Length);
 
             ByteArrayContent content = new(postData);
             content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/grpc");

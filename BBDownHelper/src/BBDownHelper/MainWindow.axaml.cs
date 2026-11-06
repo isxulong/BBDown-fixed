@@ -835,6 +835,17 @@ public partial class MainWindow : Window
 
     private string BbdownPath() => CoreLayout.BbdownPath(_baseDir);   // v3.3：core\BBDown.exe
 
+    /// <summary>文件写入时间（UTC）；不存在或读取失败返回 null，绝不抛（回执判定用）。</summary>
+    private static DateTime? TryGetFileTimeUtc(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            return File.GetLastWriteTimeUtc(path);
+        }
+        catch { return null; }
+    }
+
     private void ShowFailBanner(string text)
     {
         FailBannerText.Text = text;
@@ -986,6 +997,11 @@ public partial class MainWindow : Window
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
         _proc = proc;
         _procIsInteractive = interactive;
+        // 本轮 P2 修复（红队#9）：_forceClosing 原来只置位、永不复位。
+        // 只要有一次「确认关窗 → 关窗流程被打断」，标志就永久为真，
+        // 之后每次进程结束都跳过 UI 收尾，界面永远停在「下载中」。
+        // 新任务开始时复位，语义即「本次任务尚未进入强制退出」。
+        _forceClosing = false;
         // 先挂 Exited 再 Start：杜绝「进程秒退、事件后挂」丢完成态的竞态
         proc.Exited += (_, _) => Dispatcher.UIThread.Post(OnProcExited);
         try
@@ -1052,8 +1068,11 @@ public partial class MainWindow : Window
         string? listPath = null;
         bool listFound = upSpace && exitCode == 0
             && UpSpaceExportVerifier.TryFindList(_baseDir, _procStartedAt, out listPath);
-        var outcome = CompletionPolicy.Route(wasCancelling, upSpace, interactive, exitCode, listFound);
         string logTail = string.Join("\n", _log.Recent(60));
+        // P1 修复：内核合并/解析失败只打红字后 return，退出码仍是 0；
+        // 失败信号必须参与路由，否则「一个文件都没产出」会被报成下载完成。
+        var outcome = CompletionPolicy.Route(wasCancelling, upSpace, interactive, exitCode, listFound,
+            CompletionPolicy.HasFailureSignal(logTail));
 
         switch (outcome)
         {
@@ -1196,6 +1215,22 @@ public partial class MainWindow : Window
             Close();           // 再次触发关窗，这次放行
             return;
         }
+
+        // 本轮 P2 修复（红队#8）：原来只拦「下载进程」，登录扫码窗口没被拦——
+        // 关掉助手后，那个独立的 BBDown login 控制台还挂在后台等扫码，
+        // 用户以为程序已经退出，实际还有个进程在跑；它写出的凭据也没人接管。
+        if (_loginProc is not null && !_forceClosing)
+        {
+            e.Cancel = true;
+            bool ok = await ConfirmDialog.Show(this,
+                "扫码登录窗口还开着，确定要退出吗？退出会取消本次登录。");
+            if (!ok) return;
+            _forceClosing = true;
+            try { _loginProc.Kill(entireProcessTree: true); } catch { }
+            Close();
+            return;
+        }
+
         base.OnClosing(e);
     }
 
@@ -1297,17 +1332,23 @@ public partial class MainWindow : Window
         LogScroll.ScrollToEnd();
     }
 
-    /// <summary>v3.8（R2.7）：复制日志——取 LogStore 全量缓冲（不受简洁模式折叠影响）。</summary>
+    /// <summary>
+    /// v3.8（R2.7）：复制日志——取 LogStore 全量缓冲（不受简洁模式折叠影响）。
+    /// 【本轮 P2 修复】原实现直接把缓冲区原文塞进剪贴板，而剪贴板的用途就是往外粘
+    /// （发给维护者/贴到反馈里），凭据值会跟着一起出去。改为统一过 DiagnosticExport.Scrub，
+    /// 与「导出求助文件」同一套打码口径；用户仍能在窗口里看到原始行，只是外发的那份被脱敏。
+    /// </summary>
     private async void OnCopyLog(object? sender, RoutedEventArgs e)
     {
         try
         {
-            var text = string.Join("\n", _log.Recent(_log.Count));
+            var raw = _log.Recent(_log.Count);
+            var text = string.Join("\n", raw.Select(DiagnosticExport.Scrub));
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard is not null && text.Length > 0)
             {
                 await clipboard.SetTextAsync(text);
-                StatusText.Text = "已复制全部日志。";
+                StatusText.Text = "已复制全部日志（凭据值已打码，可放心粘贴外发）。";
             }
             else
             {
@@ -1357,9 +1398,33 @@ public partial class MainWindow : Window
             ? "BBDown 控制台窗口还在运行，确定要中断吗？未完成的临时文件可以在保存文件夹里删除。"
             : "下载还在进行中，确定要取消吗？未完成的临时文件可以在保存文件夹里删除。");
         if (!ok || _proc is null) return;   // 确认框打开期间进程可能已自然结束
+        // 修复（红队#7）：原来先置 _cancelling=true 再杀进程，Kill 抛异常被吞也照样置位——
+        // 如果这期间进程已自然跑完（大文件刚好收尾），完成态会被报成「已取消」，
+        // 用户以为没下完、去删临时文件，其实文件已完整。
+        // 现在：先杀进程并确认它真的没了，再置取消标志；杀不掉就不置位，保持真实退出码。
+        // 关键一步：先确认进程是不是已经自己结束了。若已结束，绝不置取消标志，
+        // 让它按真实退出码走完成态路由（否则「刚好下完了」会被谎报成「已取消」）。
+        bool alive = true;
+        try { alive = !_proc.HasExited; } catch { }
+        if (!alive)
+        {
+            StatusText.Text = "任务已自行结束，按实际结果记录。";
+            return;
+        }
+
+        // 进程还活着：先置标志再杀（置位必须在 Kill 之前，否则 Exited 回调抢跑会把取消记成正常结束）。
         _cancelling = true;
         StatusText.Text = "正在取消…";
         try { _proc.Kill(entireProcessTree: true); } catch { }
+
+        // 杀完再校验：若仍存活说明取消失败，复位标志，避免后续完成态被谎报为已取消。
+        bool stillAlive = false;
+        try { stillAlive = !_proc.HasExited; } catch { }
+        if (stillAlive)
+        {
+            _cancelling = false;
+            StatusText.Text = "取消失败：BBDown 进程仍在运行，请稍后再试，或在任务管理器里结束它。";
+        }
     }
 
     // ---------- 登录 ----------
@@ -1388,6 +1453,9 @@ public partial class MainWindow : Window
             WorkingDirectory = _baseDir,
             UseShellExecute = true
         };
+        // 本轮 P2 修复：先记下登录前的凭据时间，退出后据此判断「这次」有没有真的写进去，
+        // 而不是只看文件在不在（已登录状态重登失败会拿到上一次的旧凭据，误报成功）。
+        DateTime? credBefore = TryGetFileTimeUtc(CoreLayout.BbdownDataPath(_baseDir));
         try
         {
             var p = Process.Start(psi);
@@ -1405,13 +1473,18 @@ public partial class MainWindow : Window
             // 红 P3-2：恢复登录按钮须看下载态——下载中 SetSecondaryEnabled 已压下它，
             // 这里无条件亮起会导致下载中完成扫码后登录按钮被重新点亮（可再点、再弹窗）。
             LoginBtn.IsEnabled = _proc is null;
-            // 登录回执：按凭据文件存在性给结论，不再让用户猜
-            bool ok = File.Exists(CoreLayout.BbdownDataPath(_baseDir));
+            // 登录回执：必须「存在 且 本次被改写」才算成功——
+            // 已登录时重登失败会留下上次的旧凭据，只看存在性会误报成功。
+            var credPath = CoreLayout.BbdownDataPath(_baseDir);
+            DateTime? credAfter = TryGetFileTimeUtc(credPath);
+            bool updated = LoginReceiptPolicy.IsRewritten(credBefore, credAfter);
+            string receipt = LoginReceiptPolicy.Receipt(File.Exists(credPath), updated);
+            bool ok = receipt == LoginReceiptPolicy.Success;
             // v4.0（R3.12）：登录回执联动三态——成功即已登录，失败交给后续探测/失败信号判定
             _loginProbeResult = ok ? true : null;
             UpdateLoginStatus();
-            StatusText.Text = LoginReceiptPolicy.Receipt(ok);
-            AppendLog("——— " + LoginReceiptPolicy.Receipt(ok));
+            StatusText.Text = receipt;
+            AppendLog("——— " + receipt);
         }
         catch (Exception ex)
         {
